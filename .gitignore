@@ -18,3 +18,13 @@ missing
 src/Makefile.in
 *~
 */*~
+Makefile
+config.h
+config.log
+config.status
+libtool
+src/.deps/
+src/Makefile
+src/yalora
+src/yalora-yalora.o
+stamp-h1
