@@ -1254,6 +1254,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 			headerostr << "\tM5:" << m5map.find((*PFAI)[i].name)->second;
 		headerostr << "\n";
 	}
+	headerostr << "@PG\tID:yalora\tPN:yalora\tCL:" << arg.commandline << "\tVN:" << PACKAGE_VERSION << "\n";
 	// deallocate m5 map
 	m5map.clear();
 	// construct BAM header
