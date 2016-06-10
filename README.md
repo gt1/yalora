@@ -49,6 +49,7 @@ Yalora has the following options (no space between option and argument allowed):
 * --constructmem: memory guideline for constructing the index used (BWT+sampled suffix array) in bytes, e.g. `--constructmem16g`, by default this is chosen is 3/4 of the physical RAM detected on the executing machine
 * --sasamplingrate: suffix array sampling rate, e.g. `--sasamplingrate16`, 32 by default
 * -T: prefix for temporary files produced during index construction and output reordering, e.g. `-T/path/to/dir/tmp_`, by default will generate files in the current directory with names based on the executable name, executing machine's host name, process ID and timestamp
+* --minalgnlen: minimum length of alignments reported, e.g. `--minalgnlen50`, default 50. Length is in reference bases.
 * --chainminscore: minimum score required for seed chains, e.g. `--chainminscore20`, default 20. Chains with smaller scores are discarded. Increasing this values will increase speed and decrease sensitivity.
 * --minlen: minimum seed length, e.g. `--minlen20`, default 20. Matches shorter than this length are ignored.
 * --minsplitlength: minimum seed length to consider splitting long seeds, e.g. `--minsplitlength28`, default 28. This option is very similar to the reseeding described in section 2.1.1 of the BWA MEM paper [https://arxiv.org/abs/1303.3997].

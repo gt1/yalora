@@ -1045,6 +1045,7 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 	optionMap . push_back ( std::pair < std::string, std::string >("sasamplingrate", formatRHS("suffix array sampling rate",getDefaultSuffixArraySamplingRate())));
 	optionMap . push_back ( std::pair < std::string, std::string >("isasamplingrate", formatRHS("inverse suffix array sampling rate",getDefaultInverseSuffixArraySamplingRate())));
 	optionMap . push_back ( std::pair < std::string, std::string >("T", formatRHS("temporary file prefix",getDefaultTmpPrefix(arg.progname))));
+	optionMap . push_back ( std::pair < std::string, std::string >("minalgnlen", formatRHS("minimum length of alignments reported",getDefaultMinAlgnLen())));
 	optionMap . push_back ( std::pair < std::string, std::string >("maxocc", formatRHS("frequency threshold for seeds",getDefaultMaxOcc())));
 	optionMap . push_back ( std::pair < std::string, std::string >("chainminscore", formatRHS("minimum chain score",getDefaultChainMinScore())));
 	optionMap . push_back ( std::pair < std::string, std::string >("minfreq", formatRHS("minimum frequency for seeds",getDefaultMinFreq())));
