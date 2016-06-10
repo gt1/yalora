@@ -1,6 +1,7 @@
 # yalora
 Yalora is a prototypical long read aligner. The name is an acronym for **Yet another long read aligner**.
-It does not have the speed of other aligners particularly on larger repetitive genomes but is constructed to be reasonably accurate/sensitive.
+It does not have the speed of other aligners particularly on larger repetitive genomes but is constructed to be reasonably accurate/sensitive. Yalora is not suitable for
+aligning short read data or read pairs.
 
 ## Source
 
