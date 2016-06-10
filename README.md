@@ -34,7 +34,7 @@ The output format can be set to sam or cram instead (where cram is most likely n
 Yalora may output more than one alignment per read if it finds several alignments of similar quality. It will mark one of the alignments with maximal alignment score as primary and all other alignments
 for a read as secondary.
 
-Tests with reads simulated from real genomes (E.coli, D.mel and HG19) at 10% error rates show that the primary alignment is usually the one mapped in the correct place, however for reads originating
+Tests with reads simulated from real genomes (E.coli, D.mel and HG19) at 10% error rate show that the primary alignment is usually the one mapped in the correct place, however for reads originating
 from repetitive regions the correct alignment may not be the one marked as primary. In most cases the correct region to place a read is contained in the aligners output though.
 
 The seed selection strategy shares some similarity with BWA's [https://arxiv.org/abs/1303.3997] MEM algorithm, the following stages are different though.
