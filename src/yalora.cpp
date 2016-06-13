@@ -519,10 +519,12 @@ struct FastALockedGet : public LockedGetInterface
 	}
 };
 
+template<typename _ssa_type>
 struct AlignContext
 {
-	typedef AlignContext this_type;
-	typedef libmaus2::util::unique_ptr<this_type>::type unique_ptr_type;
+	typedef _ssa_type ssa_type;
+	typedef AlignContext<ssa_type> this_type;
+	typedef typename libmaus2::util::unique_ptr<this_type>::type unique_ptr_type;
 
 	LockedWriter & LW;
 	libmaus2::fastx::FastAIndex PFAI;
@@ -537,7 +539,7 @@ struct AlignContext
 	uint64_t const limit;
 	uint64_t const minsplitlength;
 	uint64_t const minsplitsize;
-	libmaus2::lcs::SMEMProcessor proc;
+	libmaus2::lcs::SMEMProcessor<ssa_type> proc;
 	libmaus2::lcs::NNP nnp;
 	libmaus2::lcs::NNPTraceContainer trace;
 	libmaus2::lcs::AlignmentTraceContainer ATC;
@@ -561,7 +563,7 @@ struct AlignContext
 		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir & rmeta,
 		libmaus2::rank::DNARank const & rPrank,
 		libmaus2::rank::DNARankKmerCache const & rPcache,
-		libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::BareSimpleSampledSuffixArray const & rBSSSA,
+		ssa_type const & rBSSSA,
 		char const * rtext,
 		uint64_t const rminfreq,
 		uint64_t const rminlen,
@@ -867,7 +869,7 @@ struct AlignContext
 	}
 };
 
- 
+
 static uint64_t getDefaultNumThreads()
 {
 	return libmaus2::suffixsort::bwtb3m::BwtMergeSortOptions::getDefaultNumThreads();
@@ -1007,7 +1009,7 @@ static std::string formatRHS(std::string const & description, default_type def)
 
 /*
  parameters:
- 
+
  -i : default fasta, inputformat
  -o : default bam, outputformat
  -t : default number of logical cores, threads
@@ -1062,38 +1064,38 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 	optionMap . push_back ( std::pair < std::string, std::string >("algndommul", formatRHS("alignment domination threshold counter",getDefaultAlignDomMul())));
 	optionMap . push_back ( std::pair < std::string, std::string >("algndomdiv", formatRHS("alignment domination threshold denominator",getDefaultAlignDomDiv())));
 	optionMap . push_back ( std::pair < std::string, std::string >("K", formatRHS("kmer cache K size",getDefaultCacheK())));
-	
+
 	uint64_t maxlhs = 0;
 	for ( std::vector < std::pair < std::string, std::string > >::const_iterator ita = optionMap.begin(); ita != optionMap.end(); ++ita )
 	{
 		assert ( ita->first.size() );
-		
+
 		if ( ita->first.size() == 1 )
 			maxlhs = std::max(maxlhs,static_cast<uint64_t>(ita->first.size()+1));
 		else
 			maxlhs = std::max(maxlhs,static_cast<uint64_t>(ita->first.size()+2));
 	}
-	
+
 	std::ostringstream messtr;
 	for ( std::vector < std::pair < std::string, std::string > >::const_iterator ita = optionMap.begin(); ita != optionMap.end(); ++ita )
 	{
 		std::string const key = ita->first;
-		
+
 		messtr << "\t";
 		messtr << std::setw(maxlhs) << std::setfill(' ');
 		if ( key.size() == 1 )
 			messtr << (std::string("-")+key);
 		else
 			messtr << (std::string("--")+key);
-		
+
 		messtr << std::setw(0);
-		
+
 		messtr << ": ";
-		
+
 		messtr << ita->second;
 		messtr << "\n";
 	}
-	
+
 	return messtr.str();
 }
 
@@ -1197,8 +1199,8 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 			std::string(tmpprefix+"_bwtb3m"),
 			std::string(), // sparse
 			bwtfn,
-			sasamplingrate /* isa */,
-			isasamplingrate /* sa */
+			isasamplingrate /* isa */,
+			sasamplingrate /* sa */
 		);
 
 		res = libmaus2::suffixsort::bwtb3m::BwtMergeSort::computeBwt(options,&std::cerr);
@@ -1260,23 +1262,29 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	m5map.clear();
 	// construct BAM header
 	libmaus2::bambam::BamHeader header(headerostr.str());
-	
+
 	// open output
 	libmaus2::bambam::BamBlockWriterBase::unique_ptr_type Pwriter(libmaus2::bambam::BamBlockWriterBaseFactory::construct(header,warginfo));
 	libmaus2::bambam::BamBlockWriterBase & writer = *Pwriter;
-	
+
 	// reorder buffer for output
 	LockedWriter LW(writer,tmpprefix+"_output_tmp");
 
 	// load index (BWT+sampled SA)
 	libmaus2::rank::DNARank::unique_ptr_type Prank(res.loadDNARank(numthreads));
-	libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::BareSimpleSampledSuffixArray BSSSA(res.loadBareSimpleSuffixArray());
+	// length of string
+	uint64_t const n = Prank->size();
+	#if 0
+	typedef libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::BareSimpleSampledSuffixArray ssa_type;
+	ssa_type BSSSA(res.loadBareSimpleSuffixArray());
+	#else
+	typedef libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::CompactBareSimpleSampledSuffixArray ssa_type;
+	ssa_type BSSSA(res.loadCompactBareSimpleSuffixArray(n));
+	#endif
 	// load coordinate cache
 	libmaus2::fastx::CoordinateCacheBiDir cocache(*Prank,*Pmeta,16 /* blockshfit */);
 
-	// length of string
-	uint64_t const n = Prank->size();
-	
+
 	// load text
 	libmaus2::autoarray::AutoArray<char> A(n,false);
 	{
@@ -1288,13 +1296,13 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	libmaus2::rank::DNARankKmerCache::unique_ptr_type Pcache(new libmaus2::rank::DNARankKmerCache(*Prank,cachek,numthreads));
 
 	libmaus2::parallel::SynchronousCounter<uint64_t> cnt;
-	libmaus2::autoarray::AutoArray < AlignContext::unique_ptr_type > Acontext(numthreads);
+	libmaus2::autoarray::AutoArray < AlignContext<ssa_type>::unique_ptr_type > Acontext(numthreads);
 	libmaus2::timing::RealTimeClock rtc;
 	rtc.start();
 
 	for ( uint64_t i = 0; i < numthreads; ++i )
 	{
-		AlignContext::unique_ptr_type tcontext(new AlignContext(LW,*PFAI,*Pmeta,*Prank,*Pcache,BSSSA,A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,cnt,rtc));
+		AlignContext<ssa_type>::unique_ptr_type tcontext(new AlignContext<ssa_type>(LW,*PFAI,*Pmeta,*Prank,*Pcache,BSSSA,A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,cnt,rtc));
 		Acontext[i] = UNIQUE_PTR_MOVE(tcontext);
 	}
 
@@ -1363,7 +1371,7 @@ int main(int argc, char * argv[])
 		libmaus2::util::ArgParser arg(argc,argv);
 
 		if ( arg.uniqueArgPresent("v") || arg.uniqueArgPresent("version") )
-		{	
+		{
 			std::cerr << "This is " << PACKAGE_NAME << " version " << PACKAGE_VERSION << "." << std::endl;
 			std::cerr << PACKAGE_NAME << " is distributed under version 3 of the GPL." << std::endl;
 			return EXIT_SUCCESS;
@@ -1376,7 +1384,7 @@ int main(int argc, char * argv[])
 			std::cerr << "usage: " << arg.progname << " [options] ref.fasta < input.fasta\n";
 			std::cerr << "\n";
 			std::cerr << "The following options can be used (no space between option name and parameter allowed):\n\n";
-			std::cerr << helpMessage(arg);		
+			std::cerr << helpMessage(arg);
 			return EXIT_SUCCESS;
 		}
 		else
