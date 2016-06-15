@@ -507,9 +507,12 @@ struct FastALockedGet : public LockedGetInterface
 		{
 			libmaus2::parallel::ScopePosixSpinLock slock(lock);
 			ok = SFARW.getNextPatternUnlocked(pattern);
-			lid = id++;
-			sid = pattern.getShortStringId();
-			rpat = pattern.pattern;
+			if ( ok )
+			{
+				lid = id++;
+				sid = pattern.getShortStringId();
+				rpat = pattern.spattern;
+			}
 		}
 		rid = lid;
 
