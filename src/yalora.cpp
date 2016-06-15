@@ -585,11 +585,15 @@ struct AlignContext
 		uint64_t const rchainminscore,
 		uint64_t const rmaxocc,
 		uint64_t const rminalgnlen,
+		unsigned int const rmaxwerr,
+                int64_t const rmaxback,
 		libmaus2::parallel::SynchronousCounter<uint64_t> & rcnt,
 		libmaus2::timing::RealTimeClock & rrtc
 	) : LW(rLW), PFAI(rPFAI), meta(rmeta), Prank(rPrank), Pcache(rPcache), cocache(Prank,meta), n(Prank.size()), text(rtext),
 	    minfreq(rminfreq), minlen(rminlen), limit(rlimit), minsplitlength(rminsplitlength), minsplitsize(rminsplitsize),
-	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv), onrefid(0), on(0), off(0), cnt(rcnt), rtc(rrtc),
+	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv,rmaxwerr,rmaxback),
+	    nnp(rmaxwerr,rmaxback),
+	    onrefid(0), on(0), off(0), cnt(rcnt), rtc(rrtc),
 	    minalgnlen(rminalgnlen)
 	{
 
@@ -1039,7 +1043,6 @@ static std::string formatRHS(std::string const & description, default_type def)
  -K: kmer cache K size
  */
 
-
 static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 {
 	std::vector < std::pair < std::string, std::string > > optionMap;
@@ -1102,7 +1105,6 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 	return messtr.str();
 }
 
-
 int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 {
 	// number of threas
@@ -1162,6 +1164,15 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 	// kmer cache K
 	uint64_t const cachek = arg.uniqueArgPresent("K") ? arg.getUnsignedNumericArg<uint64_t>("K") : getDefaultCacheK();
+
+	// maximum number of errors in 64 symbol window
+	unsigned int const maxwerr =
+		arg.uniqueArgPresent("maxwerr") ? arg.getUnsignedNumericArg<uint64_t>("maxwerr") :
+			libmaus2::lcs::NNP::getDefaultMaxWindowError();
+	// distance threshold from best trace
+	int64_t const maxback =
+		arg.uniqueArgPresent("maxback") ? arg.getUnsignedNumericArg<uint64_t>("maxback") :
+			libmaus2::lcs::NNP::getDefaultMaxBack();
 
 	// set up arguments for constructing output writer
 	libmaus2::util::ArgInfo warginfo(arg.progname);
@@ -1287,7 +1298,6 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	// load coordinate cache
 	libmaus2::fastx::CoordinateCacheBiDir cocache(*Prank,*Pmeta,16 /* blockshfit */);
 
-
 	// load text
 	libmaus2::autoarray::AutoArray<char> A(n,false);
 	{
@@ -1305,7 +1315,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 	for ( uint64_t i = 0; i < numthreads; ++i )
 	{
-		AlignContext<ssa_type>::unique_ptr_type tcontext(new AlignContext<ssa_type>(LW,*PFAI,*Pmeta,*Prank,*Pcache,BSSSA,A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,cnt,rtc));
+		AlignContext<ssa_type>::unique_ptr_type tcontext(new AlignContext<ssa_type>(LW,*PFAI,*Pmeta,*Prank,*Pcache,BSSSA,A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc));
 		Acontext[i] = UNIQUE_PTR_MOVE(tcontext);
 	}
 
