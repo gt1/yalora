@@ -469,15 +469,21 @@ struct BamLockedGet : public LockedGetInterface
 		{
 			libmaus2::parallel::ScopePosixSpinLock slock(lock);
 			ok = dec.readAlignment();
-			lid = id++;
-			ralgn.swap(algn);
+
+			if ( ok )
+			{
+				lid = id++;
+				ralgn.swap(algn);
+			}
 		}
-		rid = lid;
 
-		sid = ralgn.getName();
-		rpat = ralgn.isReverse() ? ralgn.getReadRC() : ralgn.getRead();
-
-		palgn = &ralgn;
+		if ( ok )
+		{
+			rid = lid;
+			sid = ralgn.getName();
+			rpat = ralgn.isReverse() ? ralgn.getReadRC() : ralgn.getRead();
+			palgn = &ralgn;
+		}
 
 		return ok;
 	}
