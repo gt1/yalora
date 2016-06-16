@@ -846,6 +846,10 @@ struct AlignContext
 				Hbuf.begin() /* qual */,
 				0 /* quality offset */
 			);
+
+			buffer_type::shared_ptr_type Pbuffer = LW.bufferFreeList.get();
+			Pbuffer->swap(buffer);
+			SQB.push_back(Pbuffer);
 		}
 
 		LW.put(SQB,rid);
