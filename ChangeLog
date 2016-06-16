@@ -1,3 +1,12 @@
+yalora (0.0.4-1) unstable; urgency=medium
+
+  * bump libmaus2 version to 2.0.207
+  * do not use bam data after EOF was signalled
+  * add maxwerr and maxback parameters
+  * fix bug occuring for empty read files
+
+ -- German Tischler <tischler@mpi-cbg.de>  Thu, 16 Jun 2016 10:16:33 +0200
+
 yalora (0.0.3-1) unstable; urgency=medium
 
   * fix bug with swapped suffix array and inverse suffix array sampling rates
