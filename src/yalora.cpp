@@ -694,6 +694,32 @@ struct AlignContext
 							beston = res.getScore();
 						if ( firstscore < 0 )
 							firstscore = res.getScore();
+
+						#if 0
+						std::string const apat = C.rc ? libmaus2::fastx::reverseComplement(pat) : pat;
+
+						uint64_t const seedposref = (C.rc ? (n - proc.CNIS.Aalgn[i].seedposb - proc.CNIS.Aalgn[i].seedlength) : proc.CNIS.Aalgn[i].seedposb) - meta.L[C.seq];
+						uint64_t const seedposq = C.rc ? (Psize - proc.CNIS.Aalgn[i].seedposa - proc.CNIS.Aalgn[i].seedlength) : proc.CNIS.Aalgn[i].seedposa;
+
+						char const * seq_ref   = text + meta.L[C.seq];
+						char const * seq_query = apat.c_str(); //C.rc ? pat.c_str();
+
+						libmaus2::lcs::NNPAlignResult const nres = nnp.align(
+							seq_ref,seq_ref + meta.S[C.seq].l,seedposref,
+							seq_query,seq_query+Psize,seedposq,
+							trace
+						);
+
+						trace.printTraceLines(
+							std::cerr,
+							seq_ref + nres.abpos,
+							seq_query + nres.bbpos,
+							80,
+							std::string(" "),
+							std::string("\n"),
+							libmaus2::fastx::remapChar
+						);
+						#endif
 					}
 				}
 			}
