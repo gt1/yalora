@@ -1,3 +1,9 @@
+yalora (0.0.6-1) unstable; urgency=medium
+
+  * add selfie program 
+
+ -- German Tischler <tischler@mpi-cbg.de>  Mon, 18 Jul 2016 11:29:11 +0200
+
 yalora (0.0.5-1) unstable; urgency=medium
 
   * add missing BAM lines for unaligned reads 
