@@ -1,4 +1,4 @@
-AC_INIT(yalora,0.0.6,[tischler@mpi-cbg.de],[yalora],[http://www.mpi-cbg.de])
+AC_INIT(yalora,0.0.7,[tischler@mpi-cbg.de],[yalora],[http://www.mpi-cbg.de])
 AC_CANONICAL_SYSTEM
 AC_PROG_LIBTOOL
 
