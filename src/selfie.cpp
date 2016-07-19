@@ -23,6 +23,28 @@
 #include <libmaus2/util/ArgParser.hpp>
 #include <libmaus2/suffixsort/bwtb3m/BwtMergeSortOptions.hpp>
 #include <libmaus2/suffixsort/bwtb3m/BwtMergeSort.hpp>
+#include <libmaus2/aio/DebugLineOutputStream.hpp>
+
+static std::vector < std::string > stateVec;
+static std::vector < std::string > printVec;
+static libmaus2::parallel::PosixSpinLock stateVecLock;
+
+static void setState(uint64_t const tid, std::string const & s)
+{
+	libmaus2::parallel::ScopePosixSpinLock slock(stateVecLock);
+	stateVec[tid] = s;
+}
+
+static void printState()
+{
+	libmaus2::aio::DebugLineOutputStream DLOS(std::cerr,libmaus2::aio::StreamLock::cerrlock);
+	libmaus2::parallel::ScopePosixSpinLock slock(stateVecLock);
+
+	for ( uint64_t i = 0; i < stateVec.size(); ++i )
+	{
+		DLOS << i << "\t" << stateVec[i] << "\n";
+	}
+}
 
 void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 {
@@ -177,6 +199,8 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 			Aproc[i] = UNIQUE_PTR_MOVE(proc);
 		}
 
+		stateVec.resize(numthreads);
+
 		#if defined(_OPENMP)
 		#pragma omp parallel num_threads(numthreads)
 		#endif
@@ -193,10 +217,19 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 			while ( LG.getNext(P) )
 			{
+				uint64_t const smemleft = std::max(static_cast<int64_t>(0),static_cast<int64_t>(P.first)-static_cast<int64_t>(minlen-1));
+				uint64_t const smemright = std::min(P.second+minlen,n);
+
+				std::ostringstream msgstr;
+				msgstr << "[" << smemleft << "," << smemright << ")";
+
+				setState(tid,msgstr.str());
+				printState();
+
 				libmaus2::rank::DNARankSMEMComputation::SMEMEnumerator<char const *> senum(
 					*Prank,A.begin(),
-					std::max(static_cast<int64_t>(0),static_cast<int64_t>(P.first)-static_cast<int64_t>(minlen-1)),
-					std::min(P.second+minlen,n),
+					smemleft,
+					smemright,
 					minfreq,
 					minlen,
 					limit,
@@ -205,6 +238,9 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 				proc.process(senum,A.begin(),n,minprintlength,maxerr);
 				proc.printAlignments(minprintlength);
+
+				setState(tid,"idle");
+				printState();
 
 				#if 0
 				std::cerr << "P=[" << P.first << "," << P.second << ")" << std::endl;
