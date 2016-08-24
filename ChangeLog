@@ -1,3 +1,9 @@
+yalora (0.0.9-1) unstable; urgency=medium
+
+  * make index a single file instead of a set of files 
+
+ -- German Tischler <tischler@mpi-cbg.de>  Wed, 24 Aug 2016 13:04:50 +0200
+
 yalora (0.0.8-1) unstable; urgency=medium
 
   * bump libmaus2 version to 2.0.247
