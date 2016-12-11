@@ -193,7 +193,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 		{
 			smem_proc_type::unique_ptr_type proc(new smem_proc_type(
 				*Pmeta,cocache,*Prank,BSSSA,A.begin(),maxxdist,activemax,fracmul,fracdiv,selfcheck,chainminscore,maxocc,algndommul,algndomdiv,chaindommul,chaindomdiv,
-				libmaus2::lcs::NNP::getDefaultMaxWindowError(),libmaus2::lcs::NNP::getDefaultMaxBack()
+				libmaus2::lcs::NNP::getDefaultMaxWindowError(),libmaus2::lcs::NNP::getDefaultMaxBack(),false /* domsameref */
 				)
 			);
 			Aproc[i] = UNIQUE_PTR_MOVE(proc);
