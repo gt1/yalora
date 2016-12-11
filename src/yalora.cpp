@@ -16,9 +16,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#if 0
-#define LIBMAUS2_CHAIN_LINK_DEBUG
-#define CHAINNODEINFOSET_DOT
+#if 1
+// #define LIBMAUS2_CHAIN_LINK_DEBUG
+// #define CHAINNODEINFOSET_DOT
 #endif
 
 #include <config.h>
@@ -548,6 +548,7 @@ struct AlignContext
 	uint64_t const limit;
 	uint64_t const minsplitlength;
 	uint64_t const minsplitsize;
+	bool const domsameref;
 	libmaus2::lcs::SMEMProcessor<ssa_type> proc;
 	libmaus2::lcs::NNP nnp;
 	libmaus2::lcs::NNPTraceContainer trace;
@@ -594,10 +595,12 @@ struct AlignContext
 		unsigned int const rmaxwerr,
                 int64_t const rmaxback,
 		libmaus2::parallel::SynchronousCounter<uint64_t> & rcnt,
-		libmaus2::timing::RealTimeClock & rrtc
+		libmaus2::timing::RealTimeClock & rrtc,
+		bool const rdomsameref
 	) : LW(rLW), PFAI(rPFAI), meta(rmeta), Prank(rPrank), Pcache(rPcache), cocache(Prank,meta), n(Prank.size()), text(rtext),
 	    minfreq(rminfreq), minlen(rminlen), limit(rlimit), minsplitlength(rminsplitlength), minsplitsize(rminsplitsize),
-	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv,rmaxwerr,rmaxback),
+	    domsameref(rdomsameref),
+	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv,rmaxwerr,rmaxback,domsameref),
 	    nnp(rmaxwerr,rmaxback),
 	    onrefid(0), on(0), off(0), cnt(rcnt), rtc(rrtc),
 	    minalgnlen(rminalgnlen)
@@ -626,20 +629,28 @@ struct AlignContext
 		uint64_t const Psize = pat.size();
 		char const * c = pat.c_str();
 
-		libmaus2::rank::DNARankSMEMComputation::SMEMEnumerator<char const *> senum(
-			Prank,
-			&Pcache,
-			c,
-			0,
-			Psize,
-			minfreq,
-			minlen,
-			limit,
-			minsplitlength,
-			minsplitsize
-		);
+		if ( 1 )
+		{
+			libmaus2::rank::DNARankSMEMComputation::SMEMEnumerator<char const *> senum(
+				Prank,
+				&Pcache,
+				c,
+				0,
+				Psize,
+				minfreq,
+				minlen,
+				limit,
+				minsplitlength,
+				minsplitsize
+			);
 
-		proc.process(senum,c,Psize);
+			proc.process(senum,c,Psize);
+		}
+		else
+		{
+			libmaus2::rank::DNARankSMEMComputation::KmerEnumerator<char const *> kenum(Prank,&Pcache,c,0 /* left */,Psize /* right */,minfreq,minlen /* kmersize */);
+			proc.process(kenum,c,Psize);
+		}
 
 		// more than one alignment?
 		if ( algn && algnrefid >= 0 && (proc.CNIS.aalgno > 1) )
@@ -1033,6 +1044,11 @@ static uint64_t getDefaultCacheK()
 	return 12;
 }
 
+static bool getDefaultDomSameRef()
+{
+	return false;
+}
+
 #if 0
 static std::string formatNumber(int64_t const v)
 {
@@ -1108,6 +1124,7 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 	optionMap . push_back ( std::pair < std::string, std::string >("algndomdiv", formatRHS("alignment domination threshold denominator",getDefaultAlignDomDiv())));
 	optionMap . push_back ( std::pair < std::string, std::string >("K", formatRHS("kmer cache K size",getDefaultCacheK())));
 	optionMap . push_back ( std::pair < std::string, std::string >("Q", formatRHS("index file name",std::string("<ref>.yalora_index"))));
+	optionMap . push_back ( std::pair < std::string, std::string >("domsameref", formatRHS("only check domination if on same reference id",getDefaultDomSameRef())));
 
 	uint64_t maxlhs = 0;
 	for ( std::vector < std::pair < std::string, std::string > >::const_iterator ita = optionMap.begin(); ita != optionMap.end(); ++ita )
@@ -1382,6 +1399,9 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	// kmer cache K
 	uint64_t const cachek = arg.uniqueArgPresent("K") ? arg.getUnsignedNumericArg<uint64_t>("K") : getDefaultCacheK();
 
+	// domination only if on same ref id
+	uint64_t const domsameref = arg.uniqueArgPresent("domsameref") ? arg.getUnsignedNumericArg<uint64_t>("domsameref") : getDefaultDomSameRef();
+
 	// maximum number of errors in 64 symbol window
 	unsigned int const maxwerr =
 		arg.uniqueArgPresent("maxwerr") ? arg.getUnsignedNumericArg<uint64_t>("maxwerr") :
@@ -1511,7 +1531,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 	for ( uint64_t i = 0; i < numthreads; ++i )
 	{
-		AlignContext<YaloraIndex::ssa_type>::unique_ptr_type tcontext(new AlignContext<YaloraIndex::ssa_type>(LW,*(index.PFAI),*(index.Pmeta),*(index.Prank),*Pcache,*(index.BSSSA),index.A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc));
+		AlignContext<YaloraIndex::ssa_type>::unique_ptr_type tcontext(new AlignContext<YaloraIndex::ssa_type>(LW,*(index.PFAI),*(index.Pmeta),*(index.Prank),*Pcache,*(index.BSSSA),index.A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc,domsameref));
 		Acontext[i] = UNIQUE_PTR_MOVE(tcontext);
 	}
 
