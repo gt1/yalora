@@ -1,3 +1,10 @@
+yalora (0.0.10-1) unstable; urgency=medium
+
+  * adapt to new libmaus2 interface
+  * add domsameref feature
+
+ -- German Tischler <tischler@mpi-cbg.de>  Mon, 12 Dec 2016 13:19:59 +0100
+
 yalora (0.0.9-1) unstable; urgency=medium
 
   * make index a single file instead of a set of files 
