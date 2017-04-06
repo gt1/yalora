@@ -24,6 +24,7 @@
 #include <libmaus2/suffixsort/bwtb3m/BwtMergeSortOptions.hpp>
 #include <libmaus2/suffixsort/bwtb3m/BwtMergeSort.hpp>
 #include <libmaus2/aio/DebugLineOutputStream.hpp>
+#include <libmaus2/sorting/SortingBufferedOutputFile.hpp>
 
 static std::vector < std::string > stateVec;
 static std::vector < std::string > printVec;
@@ -40,11 +41,102 @@ static void printState()
 	libmaus2::aio::DebugLineOutputStream DLOS(std::cerr,libmaus2::aio::StreamLock::cerrlock);
 	libmaus2::parallel::ScopePosixSpinLock slock(stateVecLock);
 
+	DLOS << static_cast<char>(27) << 'c';
 	for ( uint64_t i = 0; i < stateVec.size(); ++i )
 	{
 		DLOS << i << "\t" << stateVec[i] << "\n";
 	}
 }
+
+
+struct CoordinatePair
+{
+	libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates A;
+	libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates B;
+	libmaus2::lcs::NNPAlignResult res;
+
+	CoordinatePair() {}
+	CoordinatePair(
+		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates const & rA,
+		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates const & rB,
+		libmaus2::lcs::NNPAlignResult const & rres
+	) : A(rA), B(rB), res(rres)
+	{
+
+	}
+	CoordinatePair(std::istream & in)
+	{
+		deserialise(in);
+	}
+
+	void deserialise(std::istream & in)
+	{
+		A.deserialise(in);
+		B.deserialise(in);
+		res.deserialise(in);
+	}
+
+	void serialise(std::ostream & out) const
+	{
+		A.serialise(out);
+		B.serialise(out);
+		res.serialise(out);
+	}
+
+	bool operator<(CoordinatePair const & C) const
+	{
+		if ( A < C.A )
+			return true;
+		else if ( C.A < A )
+			return false;
+		else if ( B < C.B )
+			return true;
+		else if ( C.B < B )
+			return false;
+		else
+			return false;
+	}
+};
+
+struct GammaInterval
+{
+	uint64_t first;
+	uint64_t second;
+
+	GammaInterval() {}
+	GammaInterval(uint64_t const rfirst, uint64_t const rsecond) : first(rfirst), second(rsecond) {}
+	GammaInterval(std::istream & in)
+	{
+		deserialise(in);
+	}
+
+	void deserialise(std::istream & in)
+	{
+		first = libmaus2::util::NumberSerialisation::deserialiseNumber(in);
+		second = libmaus2::util::NumberSerialisation::deserialiseNumber(in);
+	}
+
+	void serialise(std::ostream & out) const
+	{
+		libmaus2::util::NumberSerialisation::serialiseNumber(out,first);
+		libmaus2::util::NumberSerialisation::serialiseNumber(out,second);
+	}
+
+	int64_t getDiam() const
+	{
+		return static_cast<int64_t>(second)-static_cast<int64_t>(first);
+	}
+
+	bool operator<(GammaInterval const & O) const
+	{
+		if ( getDiam() != O.getDiam() )
+			return getDiam() > O.getDiam();
+		else if ( first != O.first )
+			return first < O.first;
+		else
+			return second < O.second;
+	}
+};
 
 void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 {
@@ -140,6 +232,11 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	std::string const deftmp = libmaus2::util::ArgInfo::getDefaultTmpFileName(arg.progname);
 	libmaus2::util::TempFileNameGenerator tmpgen(deftmp,3);
 
+	std::string const sorttmp = tmpgen.getFileName();
+	libmaus2::util::TempFileRemovalContainer::addTempFile(sorttmp);
+	libmaus2::sorting::SortingBufferedOutputFile<CoordinatePair> CPS(sorttmp);
+	libmaus2::parallel::PosixSpinLock CPSlock;
+
 	uint64_t acc_s = 0;
 	for ( uint64_t zz = 0; zz < Pmeta->S.size(); )
 	{
@@ -156,17 +253,39 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 		uint64_t const low = acc_s;
 		uint64_t const high = acc_s + pack_s;
 
+		std::cerr << "[V] low=" << low << " high=" << high << " acc_s=" << acc_s << " pack_s=" << pack_s << std::endl;
+
 		std::string const activefn =
 			libmaus2::rank::DNARankSMEMComputation::activeParallel(tmpgen,*Pcache,A.begin(),low,high,minfreq,minlen,numthreads,maxxdist + 2*(minlen-1));
 
 		libmaus2::gamma::GammaIntervalDecoder::unique_ptr_type Pdec(new libmaus2::gamma::GammaIntervalDecoder(std::vector<std::string>(1,activefn),0/*offset */,1 /* numthreads */));
 
+		std::string const sortinfn = tmpgen.getFileName(true);
+		libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>::unique_ptr_type sptr(
+			new libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>(sortinfn)
+		);
+
+		{
+			std::pair<uint64_t,uint64_t> P;
+			while ( Pdec->getNext(P) )
+			{
+				sptr->put(
+					GammaInterval(P.first,P.second)
+				);
+			}
+		}
+
+		libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>::merger_ptr_type Pmerger(
+			sptr->getMerger()
+		);
+
 		struct LockedGet
 		{
 			libmaus2::parallel::PosixSpinLock lock;
-			libmaus2::gamma::GammaIntervalDecoder& dec;
+			// libmaus2::gamma::GammaIntervalDecoder& dec;
+			libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>::merger_ptr_type & Pmerger;
 
-			LockedGet(libmaus2::gamma::GammaIntervalDecoder & rdec) : dec(rdec)
+			LockedGet(libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>::merger_ptr_type & rPmerger) : Pmerger(rPmerger)
 			{
 			}
 
@@ -175,14 +294,20 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 				bool ok = false;
 				{
 					libmaus2::parallel::ScopePosixSpinLock slock(lock);
-					ok = dec.getNext(P);
+					GammaInterval Q;
+					ok = Pmerger->getNext(Q);
+					if ( ok )
+					{
+						P.first = Q.first;
+						P.second = Q.second;
+					}
 				}
 				return ok;
 			}
 		};
 
 		libmaus2::autoarray::AutoArray < std::pair<uint64_t,uint64_t> > VP(numthreads);
-		LockedGet LG(*Pdec);
+		LockedGet LG(Pmerger);
 
 		libmaus2::fastx::CoordinateCacheBiDir cocache(*Prank,*Pmeta,16 /* blockshfit */);
 
@@ -200,6 +325,9 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 		}
 
 		stateVec.resize(numthreads);
+		for ( uint64_t i = 0; i < numthreads; ++i )
+			setState(i,"idle");
+
 
 		#if defined(_OPENMP)
 		#pragma omp parallel num_threads(numthreads)
@@ -214,6 +342,26 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 				;
 			std::pair<uint64_t,uint64_t> & P = VP[tid];
 			smem_proc_type & proc = *(Aproc[tid]);
+
+			struct SelfieVerbosity : public smem_proc_type::Verbosity
+			{
+				uint64_t tid;
+				std::string prefix;
+
+				SelfieVerbosity(uint64_t const rtid, std::string const & rprefix)
+				: tid(rtid), prefix(rprefix)
+				{
+
+				}
+
+				void operator()(libmaus2::rank::DNARankMEM const & smem, uint64_t const z) const
+				{
+					std::ostringstream ostr;
+					ostr << prefix << "\t" << z << "\t" << smem;
+					setState(tid,ostr.str());
+					printState();
+				}
+			};
 
 			while ( LG.getNext(P) )
 			{
@@ -236,8 +384,29 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 					minsplitlength,
 					minsplitsize);
 
-				proc.process(senum,A.begin(),n,minprintlength,maxerr);
-				proc.printAlignments(minprintlength);
+				SelfieVerbosity SV(tid,msgstr.str());
+
+				proc.process(senum,A.begin(),n,minprintlength,maxerr,SV);
+				// proc.printAlignments(minprintlength);
+
+				std::pair<libmaus2::lcs::ChainAlignment const *, libmaus2::lcs::ChainAlignment const *> const AP =
+					proc.getAlignments();
+
+				for ( libmaus2::lcs::ChainAlignment const * it = AP.first; it != AP.second; ++it )
+				{
+					libmaus2::lcs::ChainAlignment const & CA = *it;
+					libmaus2::lcs::NNPAlignResult const & res = CA.res;
+
+					std::vector<libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates> const VA = Pmeta->mapCoordinatePairToList(res.abpos,res.aepos);
+					std::vector<libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::Coordinates> const VB = Pmeta->mapCoordinatePairToList(res.bbpos,res.bepos);
+
+					if ( VA.size() == 1 && VB.size() == 1 )
+					{
+						CoordinatePair CP(VA[0],VB[0],res);
+						libmaus2::parallel::ScopePosixSpinLock slock(CPSlock);
+						CPS.put(CP);
+					}
+				}
 
 				setState(tid,"idle");
 				printState();
@@ -313,6 +482,22 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 				#endif
 			}
 		}
+
+		acc_s += pack_s;
+	}
+
+	libmaus2::sorting::SortingBufferedOutputFile<CoordinatePair>::merger_ptr_type Pmerger(CPS.getMerger());
+	CoordinatePair CP;
+	while ( Pmerger->getNext(CP) )
+	{
+		std::ostringstream ostr;
+		CP.A.print(ostr);
+		ostr << " ";
+		CP.B.print(ostr);
+		ostr << " ";
+		ostr << CP.res.getErrorRate();
+
+		std::cout << ostr.str() << std::endl;
 	}
 }
 
