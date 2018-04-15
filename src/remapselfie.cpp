@@ -40,6 +40,7 @@
 #include <libmaus2/lcs/NNPCor.hpp>
 #include <libmaus2/lcs/NNP.hpp>
 #include <libmaus2/lcs/NP.hpp>
+#include <libmaus2/lcs/NPLLinMem.hpp>
 #include <libmaus2/lcs/AlignmentPrint.hpp>
 #include <libmaus2/dazzler/align/Overlap.hpp>
 #include <libmaus2/dazzler/align/AlignmentWriter.hpp>
@@ -191,11 +192,17 @@ std::ostream & operator<<(std::ostream & out, Coord const & C)
 
 struct SortEntry
 {
+	// absolute position in index
 	uint64_t zzz;
+	// sequence
 	uint64_t seq;
+	// position in seq
 	uint64_t pos;
+	// length of hit
 	uint64_t l;
+	// is entry active?
 	bool active;
+
 	SortEntry()
 	{
 
@@ -374,6 +381,142 @@ static std::string getDefaultTmpPrefix(std::string const & progname)
 	return libmaus2::util::ArgInfo::getDefaultTmpFileName(progname);
 }
 
+static void extendRight(
+	char const * a,
+	int64_t const an,
+	char const * b,
+	int64_t const bn,
+	libmaus2::lcs::NNPAlignResult & algn,
+	libmaus2::lcs::AlignmentTraceContainer & ATC,
+	int64_t const ext = 256,
+	double const e = 0.4
+)
+{
+	libmaus2::lcs::NPLLinMem npl;
+	bool running = true;
+
+	while ( running )
+	{
+		running = false;
+
+		int64_t const ava = an - algn.aepos;
+		int64_t const avb = bn - algn.bepos;
+
+		int64_t const usea = std::min(ava,ext);
+		int64_t const useb = std::min(avb,ext);
+
+		npl.np(
+			a+algn.aepos,a+algn.aepos+usea,
+			b+algn.bepos,b+algn.bepos+useb
+		);
+
+		npl.lastGoodWindowBack(64,e);
+
+		std::pair<int64_t,int64_t> const SL = npl.getStringLengthUsed();
+
+		if ( SL.first + SL.second )
+		{
+			#if 0
+			if ( SL.first >= ext/2 && SL.second >= ext/2 )
+			{
+				std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
+				std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(npl.ta,npl.ta+adv.second);
+
+				npl.te = npl.ta + adv.second;
+
+				std::cerr << "extend right(1) " << npl.getAlignmentStatistics() << std::endl;
+
+				ATC.push(npl);
+				algn.aepos += SLex.first;
+				algn.bepos += SLex.second;
+			}
+			else
+			#endif
+			{
+				std::cerr << "extend right(2) " << npl.getAlignmentStatistics() << std::endl;
+
+				ATC.push(npl);
+				algn.aepos += SL.first;
+				algn.bepos += SL.second;
+			}
+
+			running = true;
+		}
+	}
+}
+
+static void extendLeft(
+	char const * a,
+	char const * b,
+	libmaus2::lcs::NNPAlignResult & algn,
+	libmaus2::lcs::AlignmentTraceContainer & ATC,
+	int64_t const ext = 256,
+	double const e = 0.4
+)
+{
+	libmaus2::lcs::NPLLinMem npl;
+	bool running = true;
+
+	while ( running )
+	{
+		running = false;
+
+		int64_t const ava = algn.abpos;
+		int64_t const avb = algn.bbpos;
+
+		int64_t const usea = std::min(ava,ext);
+		int64_t const useb = std::min(avb,ext);
+
+		std::reverse_iterator<char const *> ra(a + algn.abpos);
+		std::reverse_iterator<char const *> rae(a + algn.abpos - usea);
+		std::reverse_iterator<char const *> rb(b + algn.bbpos);
+		std::reverse_iterator<char const *> rbe(b + algn.bbpos - useb);
+
+		npl.np(ra,rae,rb,rbe);
+
+		npl.lastGoodWindowBack(64,e);
+
+		std::pair<int64_t,int64_t> const SL = npl.getStringLengthUsed();
+
+		if ( SL.first + SL.second )
+		{
+			#if 0
+			if ( SL.first >= ext/2 && SL.second >= ext/2 )
+			{
+				std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
+				std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(
+					npl.ta,
+					npl.ta+adv.second
+				);
+
+				npl.te = npl.ta + adv.second;
+
+				std::reverse(npl.ta,npl.te);
+
+				std::cerr << "extend left(1) " << npl.getAlignmentStatistics() << std::endl;
+
+				ATC.prepend(npl.ta,npl.te);
+
+				algn.abpos -= SLex.first;
+				algn.bbpos -= SLex.second;
+			}
+			else
+			#endif
+			{
+				std::reverse(npl.ta,npl.te);
+				std::cerr << "extend left(2) " << npl.getAlignmentStatistics() << std::endl;
+
+				ATC.prepend(npl.ta,npl.te);
+				algn.abpos -= SL.first;
+				algn.bbpos -= SL.second;
+			}
+
+			running = true;
+		}
+	}
+}
+
+
 int remapselfie(libmaus2::util::ArgParser const & arg)
 {
 	std::string const outfn = arg[0];
@@ -517,7 +660,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 	libmaus2::dazzler::align::AlignmentWriterArray AWA(tmpprefix + "_AWA",numthreads,tspace);
 
 	#if defined(_OPENMP)
-	#pragma omp parallel for schedule(dynamic,1) num_threads(numthreads)
+	//#pragma omp parallel for schedule(dynamic,1) num_threads(numthreads)
 	#endif
 	for ( uint64_t i = 0; i < V.size(); ++i )
 	{
@@ -559,15 +702,19 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 			uint64_t const l = pe-pa;
 			uint64_t const numk = (l >= k) ? (l-k+1) : 0;
 
+			// iterate over k-mers
 			for ( uint64_t zzz = 0; zzz < numk; ++zzz )
 			{
 				char const * pc = pa + zzz;
 				std::pair<uint64_t,uint64_t> const P = kcache.search(pc,k);
 
+				// more than one hit?
 				if ( P.second - P.first > 1 )
 				{
+					// iterate over hits
 					for ( uint64_t zz = P.first; zz < P.second; ++zz )
 					{
+						// map coordinates
 						uint64_t const p = GP.getPosition(zz);
 						std::pair<uint64_t,uint64_t> const coL = cocache[p];
 						std::pair<uint64_t,uint64_t> const coR = cocache[(p+k-1)%n];
@@ -589,6 +736,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 							(A.begin() + p != pc)
 						)
 						{
+							// push hit
 							Asort.push(
 								Asorto,
 								SortEntry(
@@ -601,8 +749,10 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 				}
 			}
 
+			// sort hits
 			std::sort(Asort.begin(),Asort.begin() + Asorto);
 
+			// merge adjacent hits
 			uint64_t ilow = 0;
 			uint64_t o = 0;
 			while ( ilow < Asorto )
@@ -611,6 +761,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 				while ( ihigh < Asorto && Asort[ilow].seq == Asort[ihigh].seq )
 					++ihigh;
 
+				// merge adjacent hits
 				uint64_t dlow = ilow;
 				while ( dlow < ihigh )
 				{
@@ -650,16 +801,21 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 
 			uint64_t gen = 0;
 
+			// iterate over hits
 			while ( ilow < Asorto )
 			{
+				// same seq
 				uint64_t ihigh = ilow+1;
 				while ( ihigh < Asorto && Asort[ilow].seq == Asort[ihigh].seq )
 					++ihigh;
 
+				// split into hits sufficienlty close to each other
 				std::vector < std::pair<uint64_t,uint64_t> > const R = gapFilter(Asort.begin(),ilow,ihigh,maxgap);
 
+				// iterate over intervals
 				for ( uint64_t i = 0; i < R.size(); ++i )
 				{
+					// interval high and low
 					uint64_t glow = R[i].first;
 					uint64_t ghigh = R[i].second;
 
@@ -745,6 +901,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 						ghigh = o;
 						todo = ghigh - glow;
 
+
 						nnptrace.computeTrace(ATC);
 						bool const alok = libmaus2::lcs::AlignmentTraceContainer::checkAlignment(
 							ATC.ta,
@@ -753,6 +910,14 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 							p1a + nnpres.bbpos
 						);
 						assert ( alok );
+
+						std::cerr << "[A] " << nnpres << std::endl;
+
+						extendLeft(p0a,p1a,nnpres,ATC,128 /* ex */);
+						std::cerr << "[B] " << nnpres << std::endl;
+
+						extendRight(p0a,p0e-p0a,p1a,p1e-p1a,nnpres,ATC,128 /* ex */);
+						std::cerr << "[C] " << nnpres << std::endl;
 
 						if ( nnpres.aepos - nnpres.abpos >= minreport )
 						{
