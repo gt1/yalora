@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS=-I m4
 
-noinst_HEADERS =
+noinst_HEADERS = Coord.hpp
 
 MANPAGES = 
 
@@ -20,7 +20,7 @@ selfie_LDADD = ${LIBMAUS2LIBS}
 selfie_LDFLAGS = ${AM_CPPFLAGS} ${LIBMAUS2CPPFLAGS} ${LIBMAUS2LDFLAGS}
 selfie_CPPFLAGS = ${AM_CPPFLAGS} ${LIBMAUS2CPPFLAGS}
 
-remapselfie_SOURCES = remapselfie.cpp
+remapselfie_SOURCES = remapselfie.cpp Coord.cpp
 remapselfie_LDADD = ${LIBMAUS2LIBS}
 remapselfie_LDFLAGS = ${AM_CPPFLAGS} ${LIBMAUS2CPPFLAGS} ${LIBMAUS2LDFLAGS}
 remapselfie_CPPFLAGS = ${AM_CPPFLAGS} ${LIBMAUS2CPPFLAGS}

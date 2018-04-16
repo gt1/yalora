@@ -17,6 +17,7 @@
 */
 #include <config.h>
 
+#include <Coord.hpp>
 #include <libmaus2/lcs/SMEMProcessor.hpp>
 
 #include <libmaus2/fastx/DNAIndexMetaDataBigBandBiDir.hpp>
@@ -47,147 +48,12 @@
 #include <libmaus2/dazzler/align/AlignmentWriterArray.hpp>
 #include <libmaus2/dazzler/align/AlignmentFile.hpp>
 
-bool getLine(std::istream & in, std::string & line)
+
+static bool getLine(std::istream & in, std::string & line)
 {
 	std::getline(in,line);
 
 	return in && line.size();
-}
-
-bool expect(std::istream & in, std::string const & ex)
-{
-	uint64_t i = 0;
-
-	while ( i < ex.size() )
-	{
-		int const c = in.get();
-
-		if ( !in || c == std::istream::traits_type::eof() )
-			return false;
-
-		if ( c != ex[i] )
-			return false;
-
-		++i;
-	}
-
-	return i;
-}
-
-bool getNumber(std::istream & in, uint64_t & v)
-{
-	v = 0;
-	uint64_t c = 0;
-
-	while ( true )
-	{
-		if ( ! in )
-		{
-			if ( c )
-				return true;
-			else
-				return false;
-		}
-
-		int const c = in.peek();
-
-		if ( ! in || c == std::istream::traits_type::eof() || !isdigit(c) )
-		{
-			if ( c )
-				return true;
-			else
-				return false;
-		}
-
-		v *= 10;
-		v += c-'0';
-		in.get();
-	}
-}
-
-struct Coord
-{
-	uint64_t valid;
-	uint64_t seq;
-	uint64_t rc;
-	uint64_t left;
-	uint64_t length;
-
-	Coord()
-	{
-
-	}
-
-	bool parse(std::string const & s)
-	{
-		std::istringstream istr(s);
-		return parse(istr);
-	}
-
-	bool parse(std::istream & in)
-	{
-		bool ok = true;
-		ok = ok && expect(in,"Coordinates(valid=");
-		ok = ok && getNumber(in,valid);
-		ok = ok && expect(in,",seq=");
-		ok = ok && getNumber(in,seq);
-		ok = ok && expect(in,",rc=");
-		ok = ok && getNumber(in,rc);
-		ok = ok && expect(in,",left=");
-		ok = ok && getNumber(in,left);
-		ok = ok && expect(in,",length=");
-		ok = ok && getNumber(in,length);
-		ok = ok && expect(in,")");
-		return ok;
-	}
-
-	Coord merge(Coord const & C) const
-	{
-		Coord R;
-
-		R.valid = valid;
-		R.seq = seq;
-		R.rc = rc;
-
-		R.left = std::min(left,C.left);
-
-		uint64_t const right = std::max(left+length,C.left+C.length);
-
-		R.length = right - R.left;
-
-		return R;
-	}
-
-	bool overlap(Coord const & C) const
-	{
-		if ( seq != C.seq )
-			return false;
-		if ( rc != C.rc )
-			return false;
-
-		libmaus2::math::IntegerInterval<int64_t> IA(
-			left,
-			left+length-1
-		);
-		libmaus2::math::IntegerInterval<int64_t> IC(
-			C.left,
-			C.left+C.length-1
-		);
-
-		return !IA.intersection(IC).isEmpty();
-	}
-};
-
-std::ostream & operator<<(std::ostream & out, Coord const & C)
-{
-	out << "Coord("
-		<< "valid=" << C.valid
-		<< ",seq=" << C.seq
-		<< ",rc=" << C.rc
-		<< ",left=" << C.left
-		<< ",length=" << C.length
-		<< ")";
-	return out;
 }
 
 struct SortEntry
@@ -416,31 +282,34 @@ static void extendRight(
 
 		if ( SL.first + SL.second )
 		{
-			#if 0
-			if ( SL.first >= ext/2 && SL.second >= ext/2 )
+			if ( algn.aepos+SL.first != algn.bepos+SL.second )
 			{
-				std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
-				std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(npl.ta,npl.ta+adv.second);
+				#if 0
+				if ( SL.first >= ext/2 && SL.second >= ext/2 )
+				{
+					std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
+					std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(npl.ta,npl.ta+adv.second);
 
-				npl.te = npl.ta + adv.second;
+					npl.te = npl.ta + adv.second;
 
-				std::cerr << "extend right(1) " << npl.getAlignmentStatistics() << std::endl;
+					std::cerr << "extend right(1) " << npl.getAlignmentStatistics() << std::endl;
 
-				ATC.push(npl);
-				algn.aepos += SLex.first;
-				algn.bepos += SLex.second;
+					ATC.push(npl);
+					algn.aepos += SLex.first;
+					algn.bepos += SLex.second;
+				}
+				else
+				#endif
+				{
+					// std::cerr << "extend right(2) " << npl.getAlignmentStatistics() << std::endl;
+
+					ATC.push(npl);
+					algn.aepos += SL.first;
+					algn.bepos += SL.second;
+				}
+
+				running = true;
 			}
-			else
-			#endif
-			{
-				std::cerr << "extend right(2) " << npl.getAlignmentStatistics() << std::endl;
-
-				ATC.push(npl);
-				algn.aepos += SL.first;
-				algn.bepos += SL.second;
-			}
-
-			running = true;
 		}
 	}
 }
@@ -480,42 +349,59 @@ static void extendLeft(
 
 		if ( SL.first + SL.second )
 		{
-			#if 0
-			if ( SL.first >= ext/2 && SL.second >= ext/2 )
+			if ( algn.abpos-SL.first != algn.bbpos-SL.second )
 			{
-				std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
-				std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(
-					npl.ta,
-					npl.ta+adv.second
-				);
+				#if 0
+				if ( SL.first >= ext/2 && SL.second >= ext/2 )
+				{
+					std::pair<int64_t,int64_t> const adv = npl.advanceMaxA(ext/2);
+					std::pair<int64_t,int64_t> const SLex = npl.getStringLengthUsed(
+						npl.ta,
+						npl.ta+adv.second
+					);
 
-				npl.te = npl.ta + adv.second;
+					npl.te = npl.ta + adv.second;
 
-				std::reverse(npl.ta,npl.te);
+					std::reverse(npl.ta,npl.te);
 
-				std::cerr << "extend left(1) " << npl.getAlignmentStatistics() << std::endl;
+					std::cerr << "extend left(1) " << npl.getAlignmentStatistics() << std::endl;
 
-				ATC.prepend(npl.ta,npl.te);
+					ATC.prepend(npl.ta,npl.te);
 
-				algn.abpos -= SLex.first;
-				algn.bbpos -= SLex.second;
+					algn.abpos -= SLex.first;
+					algn.bbpos -= SLex.second;
+				}
+				else
+				#endif
+				{
+					std::reverse(npl.ta,npl.te);
+					// std::cerr << "extend left(2) " << npl.getAlignmentStatistics() << std::endl;
+
+					ATC.prepend(npl.ta,npl.te);
+					algn.abpos -= SL.first;
+					algn.bbpos -= SL.second;
+				}
+
+				running = true;
 			}
-			else
-			#endif
-			{
-				std::reverse(npl.ta,npl.te);
-				std::cerr << "extend left(2) " << npl.getAlignmentStatistics() << std::endl;
-
-				ATC.prepend(npl.ta,npl.te);
-				algn.abpos -= SL.first;
-				algn.bbpos -= SL.second;
-			}
-
-			running = true;
 		}
 	}
 }
 
+static void extend(
+	char const * a,
+	int64_t const an,
+	char const * b,
+	int64_t const bn,
+	libmaus2::lcs::NNPAlignResult & algn,
+	libmaus2::lcs::AlignmentTraceContainer & ATC,
+	int64_t const ext = 256,
+	double const e = 0.4
+)
+{
+	extendLeft(a,b,algn,ATC,ext,e);
+	extendRight(a,an,b,bn,algn,ATC,ext,e);
+}
 
 int remapselfie(libmaus2::util::ArgParser const & arg)
 {
@@ -606,7 +492,6 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 
 	std::vector < Coord > V;
 
-
 	while ( getLine(ISI,line) )
 	{
 		Coord coord;
@@ -660,7 +545,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 	libmaus2::dazzler::align::AlignmentWriterArray AWA(tmpprefix + "_AWA",numthreads,tspace);
 
 	#if defined(_OPENMP)
-	//#pragma omp parallel for schedule(dynamic,1) num_threads(numthreads)
+	#pragma omp parallel for schedule(dynamic,1) num_threads(numthreads)
 	#endif
 	for ( uint64_t i = 0; i < V.size(); ++i )
 	{
@@ -911,6 +796,9 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 						);
 						assert ( alok );
 
+						extend(p0a,p0e-p0a,p1a,p1e-p1a,nnpres,ATC,128 /* ex */,0.2);
+
+						#if 0
 						std::cerr << "[A] " << nnpres << std::endl;
 
 						extendLeft(p0a,p1a,nnpres,ATC,128 /* ex */);
@@ -918,6 +806,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 
 						extendRight(p0a,p0e-p0a,p1a,p1e-p1a,nnpres,ATC,128 /* ex */);
 						std::cerr << "[C] " << nnpres << std::endl;
+						#endif
 
 						if ( nnpres.aepos - nnpres.abpos >= minreport )
 						{
@@ -1126,7 +1015,7 @@ int main(int argc, char * argv[])
 			std::cerr << "This is " << PACKAGE_NAME << " version " << PACKAGE_VERSION << "." << std::endl;
 			std::cerr << PACKAGE_NAME << " is distributed under version 3 of the GPL." << std::endl;
 			std::cerr << "\n";
-			std::cerr << "usage: " << arg.progname << " [options] ref.fasta in.selfie\n";
+			std::cerr << "usage: " << arg.progname << " [options] out.las ref.fasta ref.fasta.selfie\n";
 			std::cerr << "\n";
 			std::cerr << "The following options can be used (no space between option name and parameter allowed):\n\n";
 			//std::cerr << helpMessage(arg);
