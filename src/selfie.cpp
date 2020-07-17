@@ -28,18 +28,18 @@
 
 static std::vector < std::string > stateVec;
 static std::vector < std::string > printVec;
-static libmaus2::parallel::PosixSpinLock stateVecLock;
+static libmaus2::parallel::StdSpinLock stateVecLock;
 
 static void setState(uint64_t const tid, std::string const & s)
 {
-	libmaus2::parallel::ScopePosixSpinLock slock(stateVecLock);
+	libmaus2::parallel::ScopeStdSpinLock slock(stateVecLock);
 	stateVec[tid] = s;
 }
 
 static void printState()
 {
 	libmaus2::aio::DebugLineOutputStream DLOS(std::cerr,libmaus2::aio::StreamLock::cerrlock);
-	libmaus2::parallel::ScopePosixSpinLock slock(stateVecLock);
+	libmaus2::parallel::ScopeStdSpinLock slock(stateVecLock);
 
 	DLOS << static_cast<char>(27) << 'c';
 	for ( uint64_t i = 0; i < stateVec.size(); ++i )
@@ -235,7 +235,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	std::string const sorttmp = tmpgen.getFileName();
 	libmaus2::util::TempFileRemovalContainer::addTempFile(sorttmp);
 	libmaus2::sorting::SortingBufferedOutputFile<CoordinatePair> CPS(sorttmp);
-	libmaus2::parallel::PosixSpinLock CPSlock;
+	libmaus2::parallel::StdSpinLock CPSlock;
 
 	uint64_t acc_s = 0;
 	for ( uint64_t zz = 0; zz < Pmeta->S.size(); )
@@ -281,7 +281,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 		struct LockedGet
 		{
-			libmaus2::parallel::PosixSpinLock lock;
+			libmaus2::parallel::StdSpinLock lock;
 			// libmaus2::gamma::GammaIntervalDecoder& dec;
 			libmaus2::sorting::SerialisingSortingBufferedOutputFile<GammaInterval>::merger_ptr_type & Pmerger;
 
@@ -293,7 +293,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 			{
 				bool ok = false;
 				{
-					libmaus2::parallel::ScopePosixSpinLock slock(lock);
+					libmaus2::parallel::ScopeStdSpinLock slock(lock);
 					GammaInterval Q;
 					ok = Pmerger->getNext(Q);
 					if ( ok )
@@ -403,7 +403,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 					if ( VA.size() == 1 && VB.size() == 1 )
 					{
 						CoordinatePair CP(VA[0],VB[0],res);
-						libmaus2::parallel::ScopePosixSpinLock slock(CPSlock);
+						libmaus2::parallel::ScopeStdSpinLock slock(CPSlock);
 						CPS.put(CP);
 					}
 				}

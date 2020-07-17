@@ -580,7 +580,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 			char const * const pe = pa + repcoord.length;
 
 			{
-			libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 			std::cerr << repcoord << " " << indexseq << " " << seqof << std::endl;
 			}
 
@@ -974,7 +974,7 @@ int remapselfie(libmaus2::util::ArgParser const & arg)
 
 							if ( (++gen % 1024) == 0 )
 							{
-								libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+								libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 								std::cerr << "[tid=" << tid << "] " << V[i] << " seq=" << Asort[ilow].seq << " proc=" << i << "/" << R.size() << std::endl;
 							}
 
