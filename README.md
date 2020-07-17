@@ -46,6 +46,7 @@ Yalora has the following options (no space between option and argument allowed):
 * -i: input format, e.g. `-ifasta`, only fasta supported so far
 * -o: output format, e.g. `-obam`, bam or sam
 * -t: number of threads, e.g. `-t8`, by default this is chosen as the number of logical CPU cores on the executing machine
+* -Q: index file name (defaults to ref.fasta.yalora_index)
 * --constructmem: memory guideline for constructing the index used (BWT+sampled suffix array) in bytes, e.g. `--constructmem16g`, by default this is chosen is 3/4 of the physical RAM detected on the executing machine
 * --sasamplingrate: suffix array sampling rate, e.g. `--sasamplingrate16`, 32 by default
 * -T: prefix for temporary files produced during index construction and output reordering, e.g. `-T/path/to/dir/tmp_`, by default will generate files in the current directory with names based on the executable name, executing machine's host name, process ID and timestamp

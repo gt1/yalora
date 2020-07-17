@@ -1,4 +1,4 @@
-AC_INIT(yalora,0.0.8,[tischler@mpi-cbg.de],[yalora],[http://www.mpi-cbg.de])
+AC_INIT(yalora,0.0.11,[tischler@mpi-cbg.de],[yalora],[http://www.mpi-cbg.de])
 AC_CANONICAL_SYSTEM
 AC_PROG_LIBTOOL
 
@@ -127,7 +127,7 @@ if test ! -z "${with_libmaus2}" ; then
 	fi
 fi
 
-PKG_CHECK_MODULES([libmaus2],[libmaus2 >= 2.0.247])
+PKG_CHECK_MODULES([libmaus2],[libmaus2 >= 2.0.255])
 
 if test ! -z "${with_libmaus2}" ; then
 	if test ! -z "${PKGCONFIGPATHSAVE}" ; then

@@ -28,3 +28,5 @@ src/Makefile
 src/yalora
 src/yalora-yalora.o
 stamp-h1
+src/selfie
+src/selfie-selfie.o

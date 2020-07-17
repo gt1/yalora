@@ -16,9 +16,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#if 0
-#define LIBMAUS2_CHAIN_LINK_DEBUG
-#define CHAINNODEINFOSET_DOT
+#if 1
+// #define LIBMAUS2_CHAIN_LINK_DEBUG
+// #define CHAINNODEINFOSET_DOT
 #endif
 
 #include <config.h>
@@ -548,6 +548,7 @@ struct AlignContext
 	uint64_t const limit;
 	uint64_t const minsplitlength;
 	uint64_t const minsplitsize;
+	bool const domsameref;
 	libmaus2::lcs::SMEMProcessor<ssa_type> proc;
 	libmaus2::lcs::NNP nnp;
 	libmaus2::lcs::NNPTraceContainer trace;
@@ -594,10 +595,12 @@ struct AlignContext
 		unsigned int const rmaxwerr,
                 int64_t const rmaxback,
 		libmaus2::parallel::SynchronousCounter<uint64_t> & rcnt,
-		libmaus2::timing::RealTimeClock & rrtc
+		libmaus2::timing::RealTimeClock & rrtc,
+		bool const rdomsameref
 	) : LW(rLW), PFAI(rPFAI), meta(rmeta), Prank(rPrank), Pcache(rPcache), cocache(Prank,meta), n(Prank.size()), text(rtext),
 	    minfreq(rminfreq), minlen(rminlen), limit(rlimit), minsplitlength(rminsplitlength), minsplitsize(rminsplitsize),
-	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv,rmaxwerr,rmaxback),
+	    domsameref(rdomsameref),
+	    proc(rmeta,cocache,rPrank,rBSSSA,rtext,rmaxxdist,ractivemax,rfracmul,rfracdiv,rselfcheck,rchainminscore,rmaxocc,ralgndommul,ralgndomdiv,rchaindommul,rchaindomdiv,rmaxwerr,rmaxback,domsameref),
 	    nnp(rmaxwerr,rmaxback),
 	    onrefid(0), on(0), off(0), cnt(rcnt), rtc(rrtc),
 	    minalgnlen(rminalgnlen)
@@ -626,20 +629,28 @@ struct AlignContext
 		uint64_t const Psize = pat.size();
 		char const * c = pat.c_str();
 
-		libmaus2::rank::DNARankSMEMComputation::SMEMEnumerator<char const *> senum(
-			Prank,
-			&Pcache,
-			c,
-			0,
-			Psize,
-			minfreq,
-			minlen,
-			limit,
-			minsplitlength,
-			minsplitsize
-		);
+		if ( 1 )
+		{
+			libmaus2::rank::DNARankSMEMComputation::SMEMEnumerator<char const *> senum(
+				Prank,
+				&Pcache,
+				c,
+				0,
+				Psize,
+				minfreq,
+				minlen,
+				limit,
+				minsplitlength,
+				minsplitsize
+			);
 
-		proc.process(senum,c,Psize);
+			proc.process(senum,c,Psize);
+		}
+		else
+		{
+			libmaus2::rank::DNARankSMEMComputation::KmerEnumerator<char const *> kenum(Prank,&Pcache,c,0 /* left */,Psize /* right */,minfreq,minlen /* kmersize */);
+			proc.process(kenum,c,Psize);
+		}
 
 		// more than one alignment?
 		if ( algn && algnrefid >= 0 && (proc.CNIS.aalgno > 1) )
@@ -1033,6 +1044,11 @@ static uint64_t getDefaultCacheK()
 	return 12;
 }
 
+static bool getDefaultDomSameRef()
+{
+	return false;
+}
+
 #if 0
 static std::string formatNumber(int64_t const v)
 {
@@ -1077,13 +1093,14 @@ static std::string formatRHS(std::string const & description, default_type def)
  --algndomdiv: default 100, alignment domination threshold denominator
  --minalgnlen: default 50, minimum length of alignment reported (length in reference bases)
  -K: kmer cache K size
+ -Q: index name
  */
 
 static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 {
 	std::vector < std::pair < std::string, std::string > > optionMap;
 	optionMap . push_back ( std::pair < std::string, std::string >("i", formatRHS("inputformat",getDefaultInputFormat())));
-	optionMap . push_back ( std::pair < std::string, std::string >("o", formatRHS("inputformat",getDefaultOutputFormat())));
+	optionMap . push_back ( std::pair < std::string, std::string >("o", formatRHS("outputformat",getDefaultOutputFormat())));
 	optionMap . push_back ( std::pair < std::string, std::string >("t", formatRHS("number of threads",getDefaultNumThreads())));
 	optionMap . push_back ( std::pair < std::string, std::string >("constructmem", formatRHS("memory guide for BWT+SA construction",getDefaultConstructionMemory())));
 	optionMap . push_back ( std::pair < std::string, std::string >("sasamplingrate", formatRHS("suffix array sampling rate",getDefaultSuffixArraySamplingRate())));
@@ -1106,6 +1123,8 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 	optionMap . push_back ( std::pair < std::string, std::string >("algndommul", formatRHS("alignment domination threshold counter",getDefaultAlignDomMul())));
 	optionMap . push_back ( std::pair < std::string, std::string >("algndomdiv", formatRHS("alignment domination threshold denominator",getDefaultAlignDomDiv())));
 	optionMap . push_back ( std::pair < std::string, std::string >("K", formatRHS("kmer cache K size",getDefaultCacheK())));
+	optionMap . push_back ( std::pair < std::string, std::string >("Q", formatRHS("index file name",std::string("<ref>.yalora_index"))));
+	optionMap . push_back ( std::pair < std::string, std::string >("domsameref", formatRHS("only check domination if on same reference id",getDefaultDomSameRef())));
 
 	uint64_t maxlhs = 0;
 	for ( std::vector < std::pair < std::string, std::string > >::const_iterator ita = optionMap.begin(); ita != optionMap.end(); ++ita )
@@ -1140,6 +1159,185 @@ static std::string helpMessage(libmaus2::util::ArgParser const & arg)
 
 	return messtr.str();
 }
+
+struct YaloraIndex
+{
+	typedef libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::CompactBareSimpleSampledSuffixArray ssa_type;
+	typedef ssa_type::unique_ptr_type ssa_ptr_type;
+
+	libmaus2::fastx::FastAIndex::unique_ptr_type PFAI;
+	libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type Pmeta;
+	libmaus2::rank::DNARank::unique_ptr_type Prank;
+	ssa_ptr_type BSSSA;
+	libmaus2::bambam::BamHeader::unique_ptr_type Pheader;
+
+	libmaus2::autoarray::AutoArray<char> A;
+	uint64_t n;
+
+	static std::map<std::string,std::string> loadM5(std::string const m5info)
+	{
+		std::map<std::string,std::string> m5map;
+
+		libmaus2::aio::InputStreamInstance ISI(m5info);
+		uint64_t const n5 = libmaus2::util::NumberSerialisation::deserialiseNumber(ISI);
+		for ( uint64_t i = 0; i < n5; ++i )
+		{
+			std::string const key = libmaus2::util::StringSerialisation::deserialiseString(ISI);
+			std::string const value = libmaus2::util::StringSerialisation::deserialiseString(ISI);
+			m5map[key] = value;
+		}
+
+		return m5map;
+	}
+
+	static uint64_t rewriteGeneric(std::ostream & out, std::string const & fn)
+	{
+		uint64_t const s = libmaus2::util::GetFileSize::getFileSize(fn);
+		libmaus2::aio::InputStreamInstance ISI(fn);
+		libmaus2::util::GetFileSize::copy(ISI,out,s);
+		return s;
+	}
+
+	static void rewrite(
+		std::string const & outfn,
+		std::string const & m5info,
+		std::string const & fainame,
+		std::string const & compactmetafn,
+		std::string const & compactfn,
+		libmaus2::util::ArgParser const & arg,
+		libmaus2::suffixsort::bwtb3m::BwtMergeSortResult & res,
+		uint64_t const numthreads
+	)
+	{
+		libmaus2::aio::OutputStreamInstance OSI(outfn);
+
+		libmaus2::fastx::FastAIndex::unique_ptr_type PFAI(libmaus2::fastx::FastAIndex::load(fainame));
+		// write FAI
+		PFAI->serialise(OSI);
+
+		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type Pmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(compactmetafn));
+		// write compact meta
+		rewriteGeneric(OSI,compactmetafn);
+
+		std::map<std::string,std::string> m5map = loadM5(m5info);
+
+		std::ostringstream headerostr;
+		headerostr << "@HD\tVN:1.5\tSO:unknown\n";
+		for ( uint64_t i = 0; i < Pmeta->S.size()/2; ++i )
+		{
+			headerostr << "@SQ\tLN:" << Pmeta->S[i].l << "\tSN:" << (*PFAI)[i].name;
+			if ( m5map.find((*PFAI)[i].name) != m5map.end() )
+				headerostr << "\tM5:" << m5map.find((*PFAI)[i].name)->second;
+			headerostr << "\n";
+		}
+		headerostr << "@PG\tID:yalora\tPN:yalora\tCL:" << arg.commandline << "\tVN:" << PACKAGE_VERSION << "\n";
+		m5map.clear();
+
+		libmaus2::bambam::BamHeader::unique_ptr_type Pheader(new libmaus2::bambam::BamHeader(headerostr.str()));
+		// write BAM header
+		Pheader->serialise(OSI);
+
+		Pheader.reset();
+		PFAI.reset();
+		Pmeta.reset();
+
+		libmaus2::rank::DNARank::unique_ptr_type Prank(res.loadDNARank(numthreads));
+		// write DNARank
+		Prank->serialise(OSI);
+
+		uint64_t const n = Prank->size();
+		Prank.reset();
+
+		ssa_ptr_type BSSSA(new ssa_type);
+		*BSSSA = res.loadCompactBareSimpleSuffixArray(n);
+		// write compact ssa
+		BSSSA->serialise(OSI);
+
+		// write compact meta
+		rewriteGeneric(OSI,compactfn);
+	}
+
+	YaloraIndex(std::string const & indexfn)
+	{
+		libmaus2::aio::InputStreamInstance ISI(indexfn);
+
+		libmaus2::fastx::FastAIndex::unique_ptr_type tFAI(libmaus2::fastx::FastAIndex::loadSerialised(ISI));
+		PFAI = UNIQUE_PTR_MOVE(tFAI);
+
+		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type tmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(ISI));
+		Pmeta = UNIQUE_PTR_MOVE(tmeta);
+
+		libmaus2::bambam::BamHeader::unique_ptr_type Theader(new libmaus2::bambam::BamHeader);
+		Theader->init(ISI);
+		Pheader = UNIQUE_PTR_MOVE(Theader);
+
+		libmaus2::rank::DNARank::unique_ptr_type trank(libmaus2::rank::DNARank::loadFromSerialised(ISI));
+		Prank = UNIQUE_PTR_MOVE(trank);
+		n = Prank->size();
+
+		ssa_ptr_type tSSSA(new ssa_type);
+		BSSSA = UNIQUE_PTR_MOVE(tSSSA);
+		BSSSA->deserialise(ISI);
+
+		A = libmaus2::autoarray::AutoArray<char>(n,false);
+		libmaus2::bitio::CompactDecoderWrapper CDW(ISI,64*1024);
+		CDW.read(A.begin(),n);
+		assert ( CDW.gcount() == static_cast<int64_t>(n) );
+	}
+
+	YaloraIndex(
+		std::string const & m5info,
+		std::string const & fainame,
+		std::string const & compactmetafn,
+		std::string const & compactfn,
+		libmaus2::util::ArgParser const & arg,
+		libmaus2::suffixsort::bwtb3m::BwtMergeSortResult & res,
+		uint64_t const numthreads
+	)
+	{
+		libmaus2::fastx::FastAIndex::unique_ptr_type tFAI(libmaus2::fastx::FastAIndex::load(fainame));
+		PFAI = UNIQUE_PTR_MOVE(tFAI);
+
+		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type tmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(compactmetafn));
+		Pmeta = UNIQUE_PTR_MOVE(tmeta);
+
+		libmaus2::rank::DNARank::unique_ptr_type trank(res.loadDNARank(numthreads));
+		Prank = UNIQUE_PTR_MOVE(trank);
+
+		ssa_ptr_type tSSSA(new ssa_type);
+		BSSSA = UNIQUE_PTR_MOVE(tSSSA);
+		*BSSSA = res.loadCompactBareSimpleSuffixArray(Prank->size());
+
+		A = libmaus2::autoarray::AutoArray<char>(Prank->size(),false);
+		{
+			libmaus2::bitio::CompactDecoderWrapper CDW(compactfn);
+			CDW.read(A.begin(),Prank->size());
+			assert ( CDW.gcount() == static_cast<int64_t>(Prank->size()) );
+		}
+
+		std::map<std::string,std::string> m5map = loadM5(m5info);
+
+		// load index meta data
+		std::ostringstream headerostr;
+		headerostr << "@HD\tVN:1.5\tSO:unknown\n";
+		for ( uint64_t i = 0; i < Pmeta->S.size()/2; ++i )
+		{
+			headerostr << "@SQ\tLN:" << Pmeta->S[i].l << "\tSN:" << (*PFAI)[i].name;
+			if ( m5map.find((*PFAI)[i].name) != m5map.end() )
+				headerostr << "\tM5:" << m5map.find((*PFAI)[i].name)->second;
+			headerostr << "\n";
+		}
+		headerostr << "@PG\tID:yalora\tPN:yalora\tCL:" << arg.commandline << "\tVN:" << PACKAGE_VERSION << "\n";
+		// deallocate m5 map
+		m5map.clear();
+
+		// construct BAM header
+		libmaus2::bambam::BamHeader::unique_ptr_type theader(new libmaus2::bambam::BamHeader(headerostr.str()));
+		Pheader = UNIQUE_PTR_MOVE(theader);
+
+		n = Prank->size();
+	}
+};
 
 int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 {
@@ -1201,6 +1399,9 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	// kmer cache K
 	uint64_t const cachek = arg.uniqueArgPresent("K") ? arg.getUnsignedNumericArg<uint64_t>("K") : getDefaultCacheK();
 
+	// domination only if on same ref id
+	uint64_t const domsameref = arg.uniqueArgPresent("domsameref") ? arg.getUnsignedNumericArg<uint64_t>("domsameref") : getDefaultDomSameRef();
+
 	// maximum number of errors in 64 symbol window
 	unsigned int const maxwerr =
 		arg.uniqueArgPresent("maxwerr") ? arg.getUnsignedNumericArg<uint64_t>("maxwerr") :
@@ -1216,157 +1417,100 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	warginfo.insertKey("level","0");
 	warginfo.insertKey("reference",fn);
 
-	std::string const compactfn = fn + ".compact";
-	std::string const compactmetafn = compactfn + ".meta";
+	std::string const indexname = arg.uniqueArgPresent("Q") ? arg["Q"] : (fn + ".yalora_index");
 
-	// produce compact file if it does not exist
-	if ( ! libmaus2::util::GetFileSize::fileExists(compactfn) || libmaus2::util::GetFileSize::isOlder(compactfn,fn) )
+	if (
+		(! libmaus2::util::GetFileSize::fileExists(indexname))
+		||
+		libmaus2::util::GetFileSize::isOlder(indexname,fn)
+	)
 	{
-		libmaus2::fastx::FastAToCompact4BigBandBiDir::fastaToCompact4BigBandBiDir(
-			std::vector<std::string>(1,fn),
-			&(std::cerr),
-			false /* single strand */,
-			compactfn
-		);
-	}
+		std::string const compactfn = tmpprefix + ".compact";
+		std::string const compactmetafn = compactfn + ".meta";
 
-	// bwt name
-	std::string const bwtfn = fn + ".bwt";
-	// bwt stats name
-	std::string const bwtmetafn = bwtfn + ".meta";
-
-	// construct BWT if it does not exist, otherwise load info
-	libmaus2::suffixsort::bwtb3m::BwtMergeSortResult res;
-	if ( ! libmaus2::util::GetFileSize::fileExists(bwtmetafn) || libmaus2::util::GetFileSize::isOlder(bwtmetafn,compactfn) )
-	{
-		libmaus2::suffixsort::bwtb3m::BwtMergeSortOptions options(
-			compactfn,
-			constructmem, // mem
-			// libmaus2::suffixsort::bwtb3m::BwtMergeSortOptions::getDefaultMem(),
-			numthreads,
-			"compactstream",
-			false /* bwtonly */,
-			std::string(tmpprefix+"_bwtb3m"),
-			std::string(), // sparse
-			bwtfn,
-			isasamplingrate /* isa */,
-			sasamplingrate /* sa */
-		);
-
-		res = libmaus2::suffixsort::bwtb3m::BwtMergeSort::computeBwt(options,&std::cerr);
-		res.serialise(bwtmetafn);
-	}
-	else
-	{
-		res.deserialise(bwtmetafn);
-	}
-
-	// generate FastA index if it does not exist
-	std::string const fainame = fn+".fai";
-	libmaus2::fastx::FastAIndexGenerator::generate(fn,fainame,true /* verbose */);
-
-	// generate sequence md5 file if it does not exist
-	std::string const m5info = fn+".m5infos";
-	if ( ! libmaus2::util::GetFileSize::fileExists(m5info) || libmaus2::util::GetFileSize::isOlder(m5info,fn) )
-	{
-		libmaus2::aio::InputStreamInstance ISI(fn);
-		libmaus2::fastx::FastAStreamSet FASS(ISI);
-		std::map<std::string,std::string> m5map = FASS.computeMD5(false,false);
-
-		libmaus2::aio::OutputStreamInstance OSI(m5info);
-		libmaus2::util::NumberSerialisation::serialiseNumber(OSI,m5map.size());
-		for ( std::map<std::string,std::string>::const_iterator ita = m5map.begin(); ita != m5map.end(); ++ita )
+		// produce compact file if it does not exist
+		if ( ! libmaus2::util::GetFileSize::fileExists(compactfn) || libmaus2::util::GetFileSize::isOlder(compactfn,fn) )
 		{
-			libmaus2::util::StringSerialisation::serialiseString(OSI,ita->first);
-			libmaus2::util::StringSerialisation::serialiseString(OSI,ita->second);
-		}
-	}
-	
-	struct YaloraIndex
-	{
-		typedef libmaus2::suffixsort::bwtb3m::BwtMergeSortResult::CompactBareSimpleSampledSuffixArray ssa_type;
-		typedef ssa_type::unique_ptr_type ssa_ptr_type;
-		
-		libmaus2::fastx::FastAIndex::unique_ptr_type PFAI;
-		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type Pmeta;
-		libmaus2::rank::DNARank::unique_ptr_type Prank;
-		ssa_ptr_type BSSSA;
-		libmaus2::bambam::BamHeader::unique_ptr_type Pheader;
-		
-		libmaus2::autoarray::AutoArray<char> A;
-		uint64_t n;
-		
-		static std::map<std::string,std::string> loadM5(std::string const m5info)
-		{
-			std::map<std::string,std::string> m5map;
-		
-			libmaus2::aio::InputStreamInstance ISI(m5info);
-			uint64_t const n5 = libmaus2::util::NumberSerialisation::deserialiseNumber(ISI);
-			for ( uint64_t i = 0; i < n5; ++i )
-			{
-				std::string const key = libmaus2::util::StringSerialisation::deserialiseString(ISI);
-				std::string const value = libmaus2::util::StringSerialisation::deserialiseString(ISI);
-				m5map[key] = value;
-			}
-			
-			return m5map;
+			libmaus2::fastx::FastAToCompact4BigBandBiDir::fastaToCompact4BigBandBiDir(
+				std::vector<std::string>(1,fn),
+				&(std::cerr),
+				false /* single strand */,
+				compactfn
+			);
 		}
 
-		YaloraIndex(
-			std::string const & m5info,
-			std::string const & fainame,
-			std::string const & compactmetafn,
-			std::string const & compactfn,
-			libmaus2::util::ArgParser const & arg,
-			libmaus2::suffixsort::bwtb3m::BwtMergeSortResult & res,
-			uint64_t const numthreads
-		)
+		// bwt name
+		std::string const bwtfn = tmpprefix + ".bwt";
+		// bwt stats name
+		std::string const bwtmetafn = tmpprefix + ".meta";
+
+		// construct BWT if it does not exist, otherwise load info
+		libmaus2::suffixsort::bwtb3m::BwtMergeSortResult res;
+		if ( ! libmaus2::util::GetFileSize::fileExists(bwtmetafn) || libmaus2::util::GetFileSize::isOlder(bwtmetafn,compactfn) )
 		{
-			libmaus2::fastx::FastAIndex::unique_ptr_type tFAI(libmaus2::fastx::FastAIndex::load(fainame));
-			PFAI = UNIQUE_PTR_MOVE(tFAI);
-			
-			libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type tmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(compactmetafn));
-			Pmeta = UNIQUE_PTR_MOVE(tmeta);
-			
-			libmaus2::rank::DNARank::unique_ptr_type trank(res.loadDNARank(numthreads));
-			Prank = UNIQUE_PTR_MOVE(trank);
-			
-			ssa_ptr_type tSSSA(new ssa_type);
-			BSSSA = UNIQUE_PTR_MOVE(tSSSA);			
-			*BSSSA = res.loadCompactBareSimpleSuffixArray(Prank->size());
+			libmaus2::suffixsort::bwtb3m::BwtMergeSortOptions options(
+				compactfn,
+				constructmem, // mem
+				// libmaus2::suffixsort::bwtb3m::BwtMergeSortOptions::getDefaultMem(),
+				numthreads,
+				"compactstream",
+				false /* bwtonly */,
+				std::string(tmpprefix+"_bwtb3m"),
+				std::string(), // sparse
+				bwtfn,
+				isasamplingrate /* isa */,
+				sasamplingrate /* sa */
+			);
 
-			A = libmaus2::autoarray::AutoArray<char>(Prank->size(),false);
-			{
-				libmaus2::bitio::CompactDecoderWrapper CDW(compactfn);
-				CDW.read(A.begin(),Prank->size());
-				assert ( CDW.gcount() == static_cast<int64_t>(Prank->size()) );
-			}
-			
-			std::map<std::string,std::string> m5map = loadM5(m5info);
-
-			// load index meta data
-			std::ostringstream headerostr;
-			headerostr << "@HD\tVN:1.5\tSO:unknown\n";
-			for ( uint64_t i = 0; i < Pmeta->S.size()/2; ++i )
-			{
-				headerostr << "@SQ\tLN:" << Pmeta->S[i].l << "\tSN:" << (*PFAI)[i].name;
-				if ( m5map.find((*PFAI)[i].name) != m5map.end() )
-					headerostr << "\tM5:" << m5map.find((*PFAI)[i].name)->second;
-				headerostr << "\n";
-			}
-			headerostr << "@PG\tID:yalora\tPN:yalora\tCL:" << arg.commandline << "\tVN:" << PACKAGE_VERSION << "\n";
-			// deallocate m5 map
-			m5map.clear();
-			
-			// construct BAM header
-			libmaus2::bambam::BamHeader::unique_ptr_type theader(new libmaus2::bambam::BamHeader(headerostr.str()));
-			Pheader = UNIQUE_PTR_MOVE(theader);
-			
-			n = Prank->size();			
+			res = libmaus2::suffixsort::bwtb3m::BwtMergeSort::computeBwt(options,&std::cerr);
+			res.serialise(bwtmetafn);
 		}
-	};
-	
-	YaloraIndex const index(m5info,fainame,compactmetafn,compactfn,arg,res,numthreads);
+		else
+		{
+			res.deserialise(bwtmetafn);
+		}
+
+		// generate FastA index if it does not exist
+		std::string const fainame = tmpprefix+".fai";
+		libmaus2::fastx::FastAIndexGenerator::generate(fn,fainame,true /* verbose */);
+
+		// generate sequence md5 file if it does not exist
+		std::string const m5info = tmpprefix+".m5infos";
+		if ( ! libmaus2::util::GetFileSize::fileExists(m5info) || libmaus2::util::GetFileSize::isOlder(m5info,fn) )
+		{
+			libmaus2::aio::InputStreamInstance ISI(fn);
+			libmaus2::fastx::FastAStreamSet FASS(ISI);
+			std::map<std::string,std::string> m5map = FASS.computeMD5(false,false);
+
+			libmaus2::aio::OutputStreamInstance OSI(m5info);
+			libmaus2::util::NumberSerialisation::serialiseNumber(OSI,m5map.size());
+			for ( std::map<std::string,std::string>::const_iterator ita = m5map.begin(); ita != m5map.end(); ++ita )
+			{
+				libmaus2::util::StringSerialisation::serialiseString(OSI,ita->first);
+				libmaus2::util::StringSerialisation::serialiseString(OSI,ita->second);
+			}
+		}
+
+		std::string const tmpindexfn = tmpprefix + ".yalora_index";
+		YaloraIndex::rewrite(tmpindexfn,m5info,fainame,compactmetafn,compactfn,arg,res,numthreads);
+
+		libmaus2::aio::FileRemoval::removeFile(compactfn);
+		libmaus2::aio::FileRemoval::removeFile(compactfn+".repl.fasta");
+		libmaus2::aio::FileRemoval::removeFile(compactmetafn);
+		libmaus2::aio::FileRemoval::removeFile(res.bwtfn);
+		libmaus2::aio::FileRemoval::removeFile(res.safn);
+		libmaus2::aio::FileRemoval::removeFile(res.isafn);
+		libmaus2::aio::FileRemoval::removeFile(res.histfn);
+		libmaus2::aio::FileRemoval::removeFile(res.hwtfn);
+		libmaus2::aio::FileRemoval::removeFile(res.safn+".compact");
+		libmaus2::aio::FileRemoval::removeFile(bwtmetafn);
+		libmaus2::aio::FileRemoval::removeFile(fainame);
+		libmaus2::aio::FileRemoval::removeFile(m5info);
+
+		libmaus2::aio::OutputStreamFactoryContainer::rename(tmpindexfn,indexname);
+	}
+
+	YaloraIndex const index(indexname);
 
 	// open output
 	libmaus2::bambam::BamBlockWriterBase::unique_ptr_type Pwriter(libmaus2::bambam::BamBlockWriterBaseFactory::construct(*(index.Pheader),warginfo));
@@ -1387,7 +1531,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 
 	for ( uint64_t i = 0; i < numthreads; ++i )
 	{
-		AlignContext<YaloraIndex::ssa_type>::unique_ptr_type tcontext(new AlignContext<YaloraIndex::ssa_type>(LW,*(index.PFAI),*(index.Pmeta),*(index.Prank),*Pcache,*(index.BSSSA),index.A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc));
+		AlignContext<YaloraIndex::ssa_type>::unique_ptr_type tcontext(new AlignContext<YaloraIndex::ssa_type>(LW,*(index.PFAI),*(index.Pmeta),*(index.Prank),*Pcache,*(index.BSSSA),index.A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc,domsameref));
 		Acontext[i] = UNIQUE_PTR_MOVE(tcontext);
 	}
 
