@@ -113,8 +113,8 @@ struct LockedWriterHeapElement
 struct LockedWriterOverflowFile
 {
 	typedef LockedWriterOverflowFile this_type;
-	typedef libmaus2::util::unique_ptr<this_type>::type unique_ptr_type;
-	typedef libmaus2::util::shared_ptr<this_type>::type shared_ptr_type;
+	typedef std::unique_ptr<this_type> unique_ptr_type;
+	typedef std::shared_ptr<this_type> shared_ptr_type;
 
 	std::string const fn;
 	libmaus2::aio::OutputStreamInstance::unique_ptr_type OSI;
@@ -169,19 +169,19 @@ struct LockedWriter
 	libmaus2::parallel::LockedGrowingFreeList<buffer_type,BufferAllocator,BufferTypeInfo> bufferFreeList;
 
 	libmaus2::bambam::BamBlockWriterBase & writer;
-	libmaus2::parallel::PosixSpinLock writerlock;
+	libmaus2::parallel::StdSpinLock writerlock;
 
 	uint64_t volatile nextfinish;
 	std::set < uint64_t > finishpending;
-	libmaus2::parallel::PosixSpinLock finishlock;
+	libmaus2::parallel::StdSpinLock finishlock;
 
 	libmaus2::util::FiniteSizeHeap<LockedWriterHeapElement> H;
-	libmaus2::parallel::PosixSpinLock hlock;
+	libmaus2::parallel::StdSpinLock hlock;
 
 	uint64_t const overflowsize;
 
 	std::map < uint64_t, LockedWriterOverflowFile::shared_ptr_type > Mexp;
-	libmaus2::parallel::PosixSpinLock exlock;
+	libmaus2::parallel::StdSpinLock exlock;
 
 	std::string const tmpprefix;
 
@@ -200,7 +200,7 @@ struct LockedWriter
 	void put(uint8_t const * u, uint64_t const l)
 	{
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(writerlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(writerlock);
 			writer.writeBamBlock(u,l);
 		}
 	}
@@ -210,7 +210,7 @@ struct LockedWriter
 		uint64_t const exid = getExpungeId(LWHE.id);
 
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(exlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(exlock);
 			if ( Mexp.find(exid) == Mexp.end() )
 			{
 				std::ostringstream fnostr;
@@ -231,7 +231,7 @@ struct LockedWriter
 		uint64_t const exid = getExpungeId(id);
 
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(exlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(exlock);
 			r = Mexp.find(exid) != Mexp.end();
 		}
 
@@ -245,7 +245,7 @@ struct LockedWriter
 
 	bool getFinishedPending(uint64_t & pending)
 	{
-		libmaus2::parallel::ScopePosixSpinLock slock(finishlock);
+		libmaus2::parallel::ScopeStdSpinLock slock(finishlock);
 		if ( finishpending.size() && *(finishpending.begin()) == nextfinish )
 		{
 			pending = nextfinish;
@@ -258,13 +258,13 @@ struct LockedWriter
 
 	void bumpFinishPending()
 	{
-		libmaus2::parallel::ScopePosixSpinLock slock(finishlock);
+		libmaus2::parallel::ScopeStdSpinLock slock(finishlock);
 		nextfinish++;
 	}
 
 	void flushExpungeFile(LockedWriterOverflowFile::shared_ptr_type Pfile)
 	{
-		libmaus2::parallel::ScopePosixSpinLock slock(writerlock);
+		libmaus2::parallel::ScopeStdSpinLock slock(writerlock);
 		Pfile->flush(bufferFreeList,writer);
 	}
 
@@ -272,7 +272,7 @@ struct LockedWriter
 	{
 		{
 			// lock heap
-			libmaus2::parallel::ScopePosixSpinLock slock(hlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(hlock);
 
 			// if block is already in expunge list
 			if ( isExpunged(rid) )
@@ -338,7 +338,7 @@ struct LockedWriter
 		}
 
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(finishlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(finishlock);
 			finishpending.insert(rid);
 		}
 
@@ -348,7 +348,7 @@ struct LockedWriter
 			LockedWriterOverflowFile::shared_ptr_type Pfile;
 
 			{
-				libmaus2::parallel::ScopePosixSpinLock shlock(hlock);
+				libmaus2::parallel::ScopeStdSpinLock shlock(hlock);
 
 				// is this the last id in the block?
 				if ( (pending + 1) % overflowsize == 0 )
@@ -357,7 +357,7 @@ struct LockedWriter
 					assert ( H.empty() || getExpungeId(H.top().id) >= exid );
 
 					{
-						libmaus2::parallel::ScopePosixSpinLock slock(exlock);
+						libmaus2::parallel::ScopeStdSpinLock slock(exlock);
 						assert ( Mexp.empty() || Mexp.begin()->first >= exid );
 					}
 
@@ -373,7 +373,7 @@ struct LockedWriter
 							assert ( ok );
 						}
 
-						libmaus2::parallel::ScopePosixSpinLock slock(exlock);
+						libmaus2::parallel::ScopeStdSpinLock slock(exlock);
 						std::map < uint64_t, LockedWriterOverflowFile::shared_ptr_type >::iterator it = Mexp.find(exid);
 
 						assert ( it != Mexp.end() );
@@ -432,7 +432,7 @@ struct LockedWriter
 struct LockedGetInterface
 {
 	typedef LockedGetInterface this_type;
-	typedef libmaus2::util::unique_ptr<this_type>::type unique_ptr_type;
+	typedef std::unique_ptr<this_type> unique_ptr_type;
 
 	virtual ~LockedGetInterface() {}
 
@@ -447,7 +447,7 @@ struct LockedGetInterface
 
 struct BamLockedGet : public LockedGetInterface
 {
-	libmaus2::parallel::PosixSpinLock lock;
+	libmaus2::parallel::StdSpinLock lock;
 	libmaus2::bambam::BamDecoder dec;
 	libmaus2::bambam::BamAlignment & algn;
 	uint64_t volatile id;
@@ -467,7 +467,7 @@ struct BamLockedGet : public LockedGetInterface
 		bool ok = false;
 		uint64_t lid = 0;
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(lock);
+			libmaus2::parallel::ScopeStdSpinLock slock(lock);
 			ok = dec.readAlignment();
 
 			if ( ok )
@@ -491,7 +491,7 @@ struct BamLockedGet : public LockedGetInterface
 
 struct FastALockedGet : public LockedGetInterface
 {
-	libmaus2::parallel::PosixSpinLock lock;
+	libmaus2::parallel::StdSpinLock lock;
 	libmaus2::fastx::StreamFastAReaderWrapper SFARW;
 	libmaus2::fastx::StreamFastAReaderWrapper::pattern_type pattern;
 	uint64_t volatile id;
@@ -511,7 +511,7 @@ struct FastALockedGet : public LockedGetInterface
 		bool ok = false;
 		uint64_t lid = 0;
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(lock);
+			libmaus2::parallel::ScopeStdSpinLock slock(lock);
 			ok = SFARW.getNextPatternUnlocked(pattern);
 			if ( ok )
 			{
@@ -533,7 +533,7 @@ struct AlignContext
 {
 	typedef _ssa_type ssa_type;
 	typedef AlignContext<ssa_type> this_type;
-	typedef typename libmaus2::util::unique_ptr<this_type>::type unique_ptr_type;
+	typedef std::unique_ptr<this_type> unique_ptr_type;
 
 	LockedWriter & LW;
 	libmaus2::fastx::FastAIndex PFAI;
@@ -660,7 +660,7 @@ struct AlignContext
 				I0.intersection(IR).isEmpty()
 			)
 			{
-				libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+				libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 				std::cerr << "[A] " << sid << std::endl;
 
 				if ( static_cast<int64_t>(C0.seq) != algnrefid )
@@ -726,7 +726,7 @@ struct AlignContext
 
 			if ( beston >= 0 && firstscore > 0 )
 			{
-				libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+				libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 				std::cerr << "best frac " << static_cast<double>(beston) / static_cast<double>(firstscore) << std::endl;
 			}
 		}
@@ -890,7 +890,7 @@ struct AlignContext
 		{
 			double const tim = rtc.getElapsedSeconds();
 
-			libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 
 			if ( algn && algnrefid >= 0 )
 				std::cerr << lcnt << "\t" << sid << "\t" << proc.CNIS.aalgno << "\t" << onrefid << "\t" << on << "\t" << off
@@ -1436,7 +1436,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 		}
 		catch(std::exception const & ex)
 		{
-			libmaus2::parallel::ScopePosixSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+			libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
 			std::cerr << ex.what() << std::endl;
 
 			ret = EXIT_FAILURE;
