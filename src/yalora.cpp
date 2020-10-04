@@ -671,7 +671,7 @@ struct AlignContext
 				I0.intersection(IR).isEmpty()
 			)
 			{
-				libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+				libmaus2::aio::StreamLock::lock_type::scope_lock_type slock(libmaus2::aio::StreamLock::cerrlock);
 				std::cerr << "[A] " << sid << std::endl;
 
 				if ( static_cast<int64_t>(C0.seq) != algnrefid )
@@ -737,7 +737,7 @@ struct AlignContext
 
 			if ( beston >= 0 && firstscore > 0 )
 			{
-				libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+				libmaus2::aio::StreamLock::lock_type::scope_lock_type slock(libmaus2::aio::StreamLock::cerrlock);
 				std::cerr << "best frac " << static_cast<double>(beston) / static_cast<double>(firstscore) << std::endl;
 			}
 		}
@@ -901,7 +901,7 @@ struct AlignContext
 		{
 			double const tim = rtc.getElapsedSeconds();
 
-			libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+			libmaus2::aio::StreamLock::lock_type::scope_lock_type slock(libmaus2::aio::StreamLock::cerrlock);
 
 			if ( algn && algnrefid >= 0 )
 				std::cerr << lcnt << "\t" << sid << "\t" << proc.CNIS.aalgno << "\t" << onrefid << "\t" << on << "\t" << off
@@ -1262,21 +1262,21 @@ struct YaloraIndex
 		libmaus2::aio::InputStreamInstance ISI(indexfn);
 
 		libmaus2::fastx::FastAIndex::unique_ptr_type tFAI(libmaus2::fastx::FastAIndex::loadSerialised(ISI));
-		PFAI = UNIQUE_PTR_MOVE(tFAI);
+		PFAI = std::move(tFAI);
 
 		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type tmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(ISI));
-		Pmeta = UNIQUE_PTR_MOVE(tmeta);
+		Pmeta = std::move(tmeta);
 
 		libmaus2::bambam::BamHeader::unique_ptr_type Theader(new libmaus2::bambam::BamHeader);
 		Theader->init(ISI);
-		Pheader = UNIQUE_PTR_MOVE(Theader);
+		Pheader = std::move(Theader);
 
 		libmaus2::rank::DNARank::unique_ptr_type trank(libmaus2::rank::DNARank::loadFromSerialised(ISI));
-		Prank = UNIQUE_PTR_MOVE(trank);
+		Prank = std::move(trank);
 		n = Prank->size();
 
 		ssa_ptr_type tSSSA(new ssa_type);
-		BSSSA = UNIQUE_PTR_MOVE(tSSSA);
+		BSSSA = std::move(tSSSA);
 		BSSSA->deserialise(ISI);
 
 		A = libmaus2::autoarray::AutoArray<char>(n,false);
@@ -1296,16 +1296,16 @@ struct YaloraIndex
 	)
 	{
 		libmaus2::fastx::FastAIndex::unique_ptr_type tFAI(libmaus2::fastx::FastAIndex::load(fainame));
-		PFAI = UNIQUE_PTR_MOVE(tFAI);
+		PFAI = std::move(tFAI);
 
 		libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::unique_ptr_type tmeta(libmaus2::fastx::DNAIndexMetaDataBigBandBiDir::load(compactmetafn));
-		Pmeta = UNIQUE_PTR_MOVE(tmeta);
+		Pmeta = std::move(tmeta);
 
 		libmaus2::rank::DNARank::unique_ptr_type trank(res.loadDNARank(numthreads));
-		Prank = UNIQUE_PTR_MOVE(trank);
+		Prank = std::move(trank);
 
 		ssa_ptr_type tSSSA(new ssa_type);
-		BSSSA = UNIQUE_PTR_MOVE(tSSSA);
+		BSSSA = std::move(tSSSA);
 		*BSSSA = res.loadCompactBareSimpleSuffixArray(Prank->size());
 
 		A = libmaus2::autoarray::AutoArray<char>(Prank->size(),false);
@@ -1333,7 +1333,7 @@ struct YaloraIndex
 
 		// construct BAM header
 		libmaus2::bambam::BamHeader::unique_ptr_type theader(new libmaus2::bambam::BamHeader(headerostr.str()));
-		Pheader = UNIQUE_PTR_MOVE(theader);
+		Pheader = std::move(theader);
 
 		n = Prank->size();
 	}
@@ -1532,7 +1532,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	for ( uint64_t i = 0; i < numthreads; ++i )
 	{
 		AlignContext<YaloraIndex::ssa_type>::unique_ptr_type tcontext(new AlignContext<YaloraIndex::ssa_type>(LW,*(index.PFAI),*(index.Pmeta),*(index.Prank),*Pcache,*(index.BSSSA),index.A.begin(),minfreq,minlen,limit,minsplitlength,minsplitsize,maxxdist,activemax,fracmul,fracdiv,algndommul,algndomdiv,chaindommul,chaindomdiv,selfcheck,chainminscore,maxocc,minalgnlen,maxwerr,maxback,cnt,rtc,domsameref));
-		Acontext[i] = UNIQUE_PTR_MOVE(tcontext);
+		Acontext[i] = std::move(tcontext);
 	}
 
 	LockedGetInterface::unique_ptr_type PLG;
@@ -1540,12 +1540,12 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 	if ( inputformat == "bam" )
 	{
 		LockedGetInterface::unique_ptr_type TLG(new BamLockedGet(std::cin));
-		PLG = UNIQUE_PTR_MOVE(TLG);
+		PLG = std::move(TLG);
 	}
 	else
 	{
 		LockedGetInterface::unique_ptr_type TLG(new FastALockedGet(std::cin));
-		PLG = UNIQUE_PTR_MOVE(TLG);
+		PLG = std::move(TLG);
 	}
 
 	int volatile ret = EXIT_SUCCESS;
@@ -1580,7 +1580,7 @@ int yalora(libmaus2::util::ArgParser const & arg, std::string const & fn)
 		}
 		catch(std::exception const & ex)
 		{
-			libmaus2::parallel::ScopeStdSpinLock slock(libmaus2::aio::StreamLock::cerrlock);
+			libmaus2::aio::StreamLock::lock_type::scope_lock_type slock(libmaus2::aio::StreamLock::cerrlock);
 			std::cerr << ex.what() << std::endl;
 
 			ret = EXIT_FAILURE;

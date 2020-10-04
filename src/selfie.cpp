@@ -321,7 +321,7 @@ void selfie(libmaus2::util::ArgParser const & arg, std::string const & fn)
 				libmaus2::lcs::NNP::getDefaultMaxWindowError(),libmaus2::lcs::NNP::getDefaultMaxBack(),false /* domsameref */
 				)
 			);
-			Aproc[i] = UNIQUE_PTR_MOVE(proc);
+			Aproc[i] = std::move(proc);
 		}
 
 		stateVec.resize(numthreads);
